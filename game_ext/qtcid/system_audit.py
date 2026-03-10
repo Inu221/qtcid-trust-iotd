@@ -1,0 +1,2 @@
+class SystemLevelAudit:
+    pass

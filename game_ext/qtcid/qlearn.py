@@ -1,0 +1,2 @@
+class QLearningAgent:
+    pass

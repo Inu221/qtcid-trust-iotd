@@ -93,6 +93,8 @@ class QTCIDConfig:
     m_voters: int = 5
     pa: float = 0.5
     pcap_rate: float = 1 / 3600
+    hpfp: float = 0.05
+    hpfn: float = 0.05
 
     # Энергия
     ein: float = 2.0

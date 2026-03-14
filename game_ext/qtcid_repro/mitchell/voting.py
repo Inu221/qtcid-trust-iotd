@@ -30,53 +30,48 @@ def voting_error_probability_basic(
     if denom == 0:
         return 0.0
 
-    # i = число заведомо "плохих" голосующих
-    # j = число "хороших", ошибочно проголосовавших против истины
-    p_err = 0.0
+    # Case 1: majority of selected voters are bad
+    s0 = 0.0
+    max_i_major = min(n_bad - mmaj, m - mmaj) if n_bad >= mmaj else -1
+    for i in range(0, max_i_major + 1):
+        bad_cnt = mmaj + i
+        good_cnt = m - bad_cnt
+        s0 += safe_div(
+            safe_comb(n_bad, bad_cnt) * safe_comb(n_good, good_cnt),
+            denom,
+        )
 
-    for i in range(0, min(n_bad, m) + 1):
-        choose_bad = safe_comb(n_bad, i)
-        remain = m - i
-
-        for j in range(0, remain + 1):
-            if i + j < mmaj:
+    # Case 2: minority of selected voters are bad, but enough good voters vote incorrectly
+    s1 = 0.0
+    max_j_bad_minor = min(n_bad, m - mmaj)
+    for j in range(0, max_j_bad_minor + 1):
+        sigma = 0.0
+        for k in range(mmaj - j, m - j + 1):
+            if k > n_good:
                 continue
-
-            choose_wrong_honest = safe_comb(n_good, j)
-            choose_right_honest = safe_comb(n_good - j, remain - j)
-
-            numerator = (
-                choose_bad
-                * choose_wrong_honest
-                * choose_right_honest
-                * (omega ** j)
-                * ((1.0 - omega) ** (remain - j))
+            sigma += (
+                safe_comb(n_good, k)
+                * (omega ** k)
+                * safe_comb(n_good - k, m - j - k)
+                * ((1.0 - omega) ** (m - j - k))
             )
-            p_err += safe_div(numerator, denom)
+        s1 += safe_div(safe_comb(n_bad, j) * sigma, denom)
 
-    return clamp01(p_err)
+    return clamp01(s0 + s1)
 
 
-def wang_ids_error_probability(
+def _wang_ids_error_probability_fixed_active(
     n_good: int,
     n_bad: int,
     m: int,
-    pa: float,
+    n_bad_active: int,
     omega: float,
 ) -> float:
-    """
-    Wang Eq. (6),
-
-    n_bad_active = Pa * Nb
-    n_bad_inactive = (1 - Pa) * Nb
-    omega = Hpfp for P_fp^IDS
-    omega = Hpfn for P_fn^IDS
-    """
     total = n_good + n_bad
     if total < m or m <= 0:
         return 0.0
 
-    n_bad_active = max(0, min(n_bad, round(pa * n_bad)))
+    n_bad_active = max(0, min(n_bad, n_bad_active))
     n_bad_inactive = n_bad - n_bad_active
     n_honest_pool = n_good + n_bad_inactive
     mmaj = majority_threshold(m)
@@ -112,3 +107,50 @@ def wang_ids_error_probability(
         term2 += safe_div(choose_active_bad * inner, denom)
 
     return clamp01(term1 + term2)
+
+
+def wang_ids_error_probability(
+    n_good: int,
+    n_bad: int,
+    m: int,
+    pa: float,
+    omega: float,
+) -> float:
+    """
+    Wang Eq. (6) with analytical averaging over the number of active bad nodes.
+
+    Instead of:
+        n_bad_active = round(pa * n_bad)
+
+    we average over:
+        K ~ Binomial(n_bad, pa)
+
+    This better matches Wang's closed-form / random attack behavior.
+    """
+    total = n_good + n_bad
+    if total < m or m <= 0:
+        return 0.0
+
+    if n_bad <= 0:
+        return _wang_ids_error_probability_fixed_active(
+            n_good=n_good,
+            n_bad=n_bad,
+            m=m,
+            n_bad_active=0,
+            omega=omega,
+        )
+
+    pa = clamp01(pa)
+
+    result = 0.0
+    for k in range(0, n_bad + 1):
+        pk = safe_comb(n_bad, k) * (pa ** k) * ((1.0 - pa) ** (n_bad - k))
+        result += pk * _wang_ids_error_probability_fixed_active(
+            n_good=n_good,
+            n_bad=n_bad,
+            m=m,
+            n_bad_active=k,
+            omega=omega,
+        )
+
+    return clamp01(result)

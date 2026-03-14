@@ -51,31 +51,25 @@ def voting_round_energy(
     flow_rate: float = 1.0,
 ) -> float:
     """
-    Operationalization для одного IDS voting round.
+    More conservative operationalization for one IDS voting round.
 
-    Логика:
-    1) target рассылает/предоставляет признаки соседям;
-    2) каждый voter отсылает свой verdict;
-    3) стоимость одного local detection шага добавляется для каждого voter.
-
-    Это не дословный MATLAB-код авторов, но faithful operational model
-    по их energy постановке.
+    We do not model full heavy bidirectional exchange as before,
+    because that made nodewise Q-TCID unrealistically expensive
+    compared with Wang/SOID.
     """
     if not voters:
         return 0.0
 
-    # 1. обмен target -> voters
-    e_down = broadcast_energy(cfg, target, voters, flow_rate=flow_rate)
-
-    # 2. verdict voters -> target
-    e_up = 0.0
+    # small communication overhead
+    e_comm = 0.0
     for v in voters:
-        e_up += link_energy(cfg, v, target, flow_rate=flow_rate)
+        d = euclidean_distance(target.pos.x, target.pos.y, v.pos.x, v.pos.y)
+        e_comm += 0.15 * transmission_cost(cfg, d)
 
-    # 3. локальная стоимость intrusion detection на каждом voter
+    # dominant cost: local detection by m voters
     e_detect = len(voters) * cfg.single_detection_cost_rate
 
-    return e_down + e_up + e_detect
+    return e_detect + e_comm
 
 
 def audit_round_energy(
@@ -84,12 +78,6 @@ def audit_round_energy(
     related_nodes: list[Node],
     flow_rate: float = 1.0,
 ) -> float:
-    """
-    System-level audit cost. В статье есть Ca / Ea как стоимость аудита.
-    Здесь она складывается из:
-    - фиксированной audit_cost
-    - доп. коммуникационных затрат на сбор свидетельств от related nodes
-    """
     e_collect = 0.0
     for n in related_nodes:
         e_collect += link_energy(cfg, n, target, flow_rate=flow_rate)

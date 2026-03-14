@@ -90,12 +90,31 @@ class HostLevelVotingAgent:
         return False if target_is_bad else True
 
     def good_vote_by_history(self, voter: Node, target: Node, action: str) -> bool:
-        bias = voter.historical_bias_toward(target.node_id)
-        threshold = self.action_threshold(action)
-        score = bias - threshold
+        """
+        True => vote "good"
+        False => vote "bad"
 
-        # Если score >= 0, узел склонен считать target good
-        return score >= 0.0
+        Базовое решение строится на intrinsic host IDS:
+        - for GOOD target: false positive with probability Hpfp
+        - for BAD target: false negative with probability Hpfn
+
+        Q-learning action aVt only slightly shifts the decision boundary,
+        not replaces host IDS.
+        """
+        idx = self.actions.index(action)
+        center = idx / max(1, len(self.actions) - 1)
+
+        # mild strategy shift: earlier actions are more suspicious,
+        # later actions are more trusting
+        strategy_shift = -0.10 + 0.20 * center
+
+        if target.state == NodeState.GOOD:
+            p_vote_good = 1.0 - self.cfg.hpfp + strategy_shift
+        else:
+            p_vote_good = self.cfg.hpfn + strategy_shift
+
+        p_vote_good = clamp01(p_vote_good)
+        return self.learner.rng.random() < p_vote_good
 
     def reward_value(
         self,
@@ -105,12 +124,12 @@ class HostLevelVotingAgent:
         all_wrong: bool,
     ) -> float:
         if all_correct:
-            return 1.0
+            return 2.0
         if all_wrong:
-            return -1.0
+            return -2.0
 
         correct = (target_is_good and vote_for_good) or ((not target_is_good) and (not vote_for_good))
-        return 0.4 if correct else -0.4
+        return 0.8 if correct else -0.8
 
     def choose_action(self, state: str):
         return self.learner.select_action(state)

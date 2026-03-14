@@ -8,7 +8,7 @@ from .config import WangCycleConfig
 from .energy import etids, audit_energy
 from .utils import binomial_sample, num_layers, safe_div
 from .voting import wang_ids_error_probability
-from .policies import BasePolicy, SOIDPolicy, QTCIDPolicy
+from .policies import BasePolicy, SOIDPolicy, QTCIDPolicy, QTCIDTrustPolicy
 from .metrics import summarize
 
 
@@ -200,3 +200,15 @@ def run_soid_energy(cfg: WangCycleConfig) -> dict:
 
 def run_qtcid_energy(cfg: WangCycleConfig) -> dict:
     return _run_many(cfg, lambda cfg, seed: QTCIDPolicy(cfg, seed), stop_on_byzantine=False, horizon=cfg.energy_eval_horizon)
+
+def run_qtcid_trust(cfg: WangCycleConfig) -> dict:
+    return _run_many(cfg, lambda cfg, seed: QTCIDTrustPolicy(cfg, seed))
+
+
+def run_qtcid_trust_energy(cfg: WangCycleConfig) -> dict:
+    return _run_many(
+        cfg,
+        lambda cfg, seed: QTCIDTrustPolicy(cfg, seed),
+        stop_on_byzantine=False,
+        horizon=cfg.energy_eval_horizon,
+    )

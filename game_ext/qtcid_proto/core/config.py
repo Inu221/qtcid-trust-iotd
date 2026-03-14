@@ -36,6 +36,11 @@ class WangCycleConfig:
     seed: Optional[int] = 42
     audit_cost_scale: float = 1.0
 
+    trust_init: float = 0.6
+    trust_min: float = 0.2
+    trust_max: float = 1.2
+    trust_gain: float = 0.04
+    trust_loss: float = 0.08
 
 def make_bvs_config(pa: float, tids: int, runs: int = 200, seed: int = 42) -> WangCycleConfig:
     return WangCycleConfig(
@@ -68,4 +73,20 @@ def make_qtcid_config(pa: float, tids: int, runs: int = 200, seed: int = 42) -> 
         runs=runs,
         seed=seed,
         reward_b=1.2,
+    )
+
+def make_qtcid_trust_config(pa: float, tids: int, runs: int = 200, seed: int = 42) -> WangCycleConfig:
+    return WangCycleConfig(
+        pa=pa,
+        tids=tids,
+        pc=0.5,
+        beta=1.0,
+        runs=runs,
+        seed=seed,
+        reward_b=1.25,
+        trust_init=0.6,
+        trust_min=0.2,
+        trust_max=1.2,
+        trust_gain=0.04,
+        trust_loss=0.08,
     )

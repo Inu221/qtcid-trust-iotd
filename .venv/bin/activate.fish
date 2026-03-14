@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/la_flame75/qtcid-trust-iotd/.venv
+set -gx VIRTUAL_ENV /home/la_flame75/projects/qtcid-trust-iotd/.venv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH

@@ -1,4 +1,4 @@
-#!/home/la_flame75/qtcid-trust-iotd/.venv/bin/python3
+#!/home/la_flame75/projects/qtcid-trust-iotd/.venv/bin/python3
 import sys
 from numpy.f2py.f2py2e import main
 if __name__ == '__main__':

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 
 class NodeState(str, Enum):
@@ -24,18 +24,9 @@ class Node:
     state: NodeState = NodeState.GOOD
     energy: float = 2.0
 
-    # История голосования:
-    # key = target_node_id, value = список прошлых голосов:
-    # +1 = голосовал "good", -1 = голосовал "bad"
     vote_history: Dict[int, List[int]] = field(default_factory=dict)
-
-    # История расхождений с аудитом / коллективным решением
     mismatch_count: int = 0
-
-    # Число раз, когда узел был выбран голосующим
     participated_votes: int = 0
-
-    # Число раз, когда узел был целью голосования
     targeted_count: int = 0
 
     def is_active(self, emin: float) -> bool:
@@ -47,28 +38,10 @@ class Node:
         self.vote_history[target_id].append(vote_value)
 
     def historical_bias_toward(self, target_id: int) -> float:
-        """
-        Средняя направленность прошлых голосов:
-        +1 -> чаще голосовал "good"
-        -1 -> чаще голосовал "bad"
-        0 -> нет истории / нейтрально
-        """
         values = self.vote_history.get(target_id, [])
         if not values:
             return 0.0
         return sum(values) / len(values)
-
-
-@dataclass
-class VotingResult:
-    target_id: int
-    target_state_before_vote: NodeState
-    voter_ids: List[int]
-    votes_for_good: int
-    votes_for_bad: int
-    majority_label_good: bool
-    audited: bool = False
-    audit_detected_attack: bool = False
 
 
 @dataclass
@@ -82,13 +55,13 @@ class QLearningConfig:
 
 @dataclass
 class QTCIDConfig:
-    # Геометрия и сеть
+    # topology / deployment
     n_nodes: int = 128
     region_length: float = 1000.0
     region_width: float = 1000.0
     communication_range: float = 250.0
 
-    # IDS / атаки
+    # system / attacks
     tids: int = 200
     m_voters: int = 5
     pa: float = 0.5
@@ -96,36 +69,60 @@ class QTCIDConfig:
     hpfp: float = 0.05
     hpfn: float = 0.05
 
-    # Энергия
+    # energy
     ein: float = 2.0
     emin: float = 0.05
     audit_cost: float = 0.05
 
-    # Формула из статьи Q-TCID:
-    # E = rho * sum(g_ij) + sum(C_ij * g_ij)
     rho: float = 0.01
     beta1: float = 0.01
     beta2: float = 0.001
     theta: float = 2.0
 
-    # Эквивалент параметра z из таблицы Q-TCID
+    # z from article
     single_detection_cost_rate: float = 1 / 20
 
-    # Q-learning
+    # host-level Q-learning
     host_q: QLearningConfig = field(
         default_factory=lambda: QLearningConfig(alpha=0.6, gamma=0.9, epsilon=0.5)
     )
+
+    # system-level Q-learning
     system_q: QLearningConfig = field(
         default_factory=lambda: QLearningConfig(alpha=0.4, gamma=0.9, epsilon=0.5)
     )
 
-    # Награда system-level audit
+    # system-level reward parameters
     reward_b: float = 1.0
 
-    # Симуляция
-    n_mc_runs: int = 1000
+    # host-level reward shaping
+    reward_all_correct: float = 2.0
+    reward_all_wrong: float = -2.0
+    reward_vote_correct: float = 0.5
+    reward_vote_wrong: float = -0.5
+    reward_majority_correct_bonus: float = 0.4
+    reward_majority_wrong_penalty: float = -0.4
+
+    # training / evaluation
+    training_episodes: int = 250
+    training_max_time: int = 6000
+    n_mc_runs: int = 300
     max_time: int = 20000
+    eval_greedy: bool = True
+
     seed: int = 42
+
+    # calibration knobs for unspecified parts of article
+    host_strategy_strength: float = 0.20
+    audit_mode: str = "correct_both"   # punish_only | correct_bad_only | correct_both
+
+    vote_energy_scale: float = 1.0
+    audit_energy_scale: float = 1.0
+
+    training_epsilon_decay: float = 0.997
+    system_check_bias: float = 0.0
+
+    use_majority_bonus: bool = True
 
 
 @dataclass

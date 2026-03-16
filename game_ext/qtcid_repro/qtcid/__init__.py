@@ -1,1 +1,0 @@
-# qtcid_repro.qtcid package

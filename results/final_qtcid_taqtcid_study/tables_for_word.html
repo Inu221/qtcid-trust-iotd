@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang='ru'>
+<head>
+<meta charset='utf-8'>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; }
+h3 { margin-top: 2em; }
+table { border-collapse: collapse; margin-bottom: 2em; }
+th, td { border: 1px solid #555; padding: 4px 10px; text-align: center; }
+th { background: #d0d8e8; }
+th.g2 { background: #a8b8d0; }
+tr:nth-child(even) td { background: #f5f5f5; }
+td.pa { font-weight: bold; background: #e8eef8; }
+td.better { color: #155215; font-weight: bold; }
+</style>
+</head>
+<body>
+<h3>Таблица 1. Сравнение Q-TCID и TA-QTCID по ключевым метрикам</h3>
+<table>
+<tr><th rowspan='2'>P<sub>a</sub></th><th rowspan='2'>T<sub>IDS</sub></th><th colspan='2' class='g2'>MTTF, с</th><th colspan='2' class='g2'>Точность</th><th colspan='2' class='g2'>Энергия, усл. ед.</th><th colspan='2' class='g2'>CMVI, усл. ед.</th><th rowspan='2'>ΔCMVI, %</th></tr><tr><th>Q-TCID</th><th>TA-QTCID</th><th>Q-TCID</th><th>TA-QTCID</th><th>Q-TCID</th><th>TA-QTCID</th><th>Q-TCID</th><th>TA-QTCID</th></tr>
+<tr><td class="pa">0.0</td><td>200</td><td>13620</td><td>13615</td><td>0.99883</td><td>0.99885</td><td>1650.9</td><td>1648.2</td><td>2.73</td><td class="better">2.50</td><td class="better">8.5</td></tr>
+<tr><td></td><td>600</td><td>13882</td><td>13815</td><td>0.99872</td><td>0.99878</td><td>586.2</td><td>584.4</td><td>1.16</td><td class="better">1.02</td><td class="better">12.1</td></tr>
+<tr><td></td><td>1000</td><td>13988</td><td>13988</td><td>0.99893</td><td>0.99893</td><td>357.4</td><td>356.9</td><td>0.59</td><td class="better">0.56</td><td class="better">5.1</td></tr>
+<tr><td class="pa">0.25</td><td>200</td><td>13560</td><td>13620</td><td>0.99782</td><td>0.99783</td><td>1608.4</td><td>1600.3</td><td>5.04</td><td class="better">4.66</td><td class="better">7.4</td></tr>
+<tr><td></td><td>600</td><td>13568</td><td>13568</td><td>0.99492</td><td>0.99492</td><td>576.2</td><td>574.7</td><td>4.44</td><td class="better">4.13</td><td class="better">7.0</td></tr>
+<tr><td></td><td>1000</td><td>13250</td><td>13250</td><td>0.99005</td><td>0.99005</td><td>360.4</td><td>359.8</td><td>5.65</td><td class="better">5.38</td><td class="better">4.8</td></tr>
+<tr><td class="pa">0.5</td><td>200</td><td>13208</td><td>13332</td><td>0.99640</td><td>0.99648</td><td>1580.4</td><td>1577.9</td><td>8.10</td><td class="better">7.38</td><td class="better">8.8</td></tr>
+<tr><td></td><td>600</td><td>13125</td><td>13110</td><td>0.98579</td><td>0.98588</td><td>570.1</td><td>568.7</td><td>11.97</td><td class="better">11.11</td><td class="better">7.2</td></tr>
+<tr><td></td><td>1000</td><td>12850</td><td>12838</td><td>0.96566</td><td>0.96565</td><td>395.1</td><td>395.0</td><td>18.52</td><td class="better">17.76</td><td class="better">4.1</td></tr>
+<tr><td class="pa">0.75</td><td>200</td><td>12612</td><td>12645</td><td>0.99422</td><td>0.99430</td><td>1523.2</td><td>1523.8</td><td>12.56</td><td class="better">11.54</td><td class="better">8.1</td></tr>
+<tr><td></td><td>600</td><td>12165</td><td>12142</td><td>0.97138</td><td>0.97141</td><td>569.1</td><td>569.6</td><td>22.46</td><td class="better">21.08</td><td class="better">6.2</td></tr>
+<tr><td></td><td>1000</td><td>10562</td><td>10662</td><td>0.92594</td><td>0.92610</td><td>425.7</td><td>427.0</td><td>36.31</td><td class="better">35.16</td><td class="better">3.2</td></tr>
+<tr><td class="pa">1.0</td><td>200</td><td>12215</td><td>12220</td><td>0.99218</td><td>0.99221</td><td>1476.4</td><td>1469.2</td><td>16.61</td><td class="better">15.34</td><td class="better">7.7</td></tr>
+<tr><td></td><td>600</td><td>10905</td><td>10995</td><td>0.95117</td><td>0.95124</td><td>557.5</td><td>558.2</td><td>34.83</td><td class="better">33.01</td><td class="better">5.2</td></tr>
+<tr><td></td><td>1000</td><td>8625</td><td>8650</td><td>0.87010</td><td>0.87000</td><td>472.4</td><td>474.1</td><td>55.17</td><td class="better">54.22</td><td class="better">1.7</td></tr>
+</table>
+<h3>Таблица 2. Улучшение CMVI TA-QTCID над Q-TCID, % (по P<sub>a</sub> и T<sub>IDS</sub>)</h3>
+<table>
+<tr><th>P<sub>a</sub></th><th>T<sub>IDS</sub>=50</th><th>T<sub>IDS</sub>=100</th><th>T<sub>IDS</sub>=200</th><th>T<sub>IDS</sub>=350</th><th>T<sub>IDS</sub>=600</th><th>T<sub>IDS</sub>=1000</th><th>T<sub>IDS</sub>=1500</th><th>Среднее</th></tr>
+<tr><td class='pa'>0.0</td><td>9.7</td><td>9.8</td><td>8.5</td><td>7.2</td><td>12.1</td><td>5.1</td><td>3.8</td><td><b>8.0</b></td></tr>
+<tr><td class='pa'>0.25</td><td>11.0</td><td>11.1</td><td>7.4</td><td>8.9</td><td>7.0</td><td>4.8</td><td>3.4</td><td><b>7.7</b></td></tr>
+<tr><td class='pa'>0.5</td><td>8.9</td><td>8.5</td><td>8.8</td><td>8.6</td><td>7.2</td><td>4.1</td><td>2.9</td><td><b>7.0</b></td></tr>
+<tr><td class='pa'>0.75</td><td>7.6</td><td>8.2</td><td>8.1</td><td>7.7</td><td>6.2</td><td>3.2</td><td>1.2</td><td><b>6.0</b></td></tr>
+<tr><td class='pa'>1.0</td><td>9.9</td><td>8.6</td><td>7.7</td><td>7.4</td><td>5.2</td><td>1.7</td><td>0.3</td><td><b>5.8</b></td></tr>
+</table>
+</body>
+</html>

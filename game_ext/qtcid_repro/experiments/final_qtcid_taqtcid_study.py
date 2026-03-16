@@ -192,11 +192,13 @@ _COLORS = {
 }
 
 
-def _five_panel_fig(figsize=(15.5, 9.5)):
+def _five_panel_fig(figsize=(16.5, 10.0)):
     """Фигура из 5 подграфиков: 3 сверху, 2 по центру снизу."""
     from matplotlib.gridspec import GridSpec
-    fig = plt.figure(figsize=figsize)
-    gs = GridSpec(2, 6, figure=fig, hspace=0.45, wspace=0.38)
+    fig = plt.figure(figsize=figsize, layout="constrained")
+    # резервируем нижние 8% под общую легенду
+    fig.get_layout_engine().set(rect=(0, 0.08, 1, 1))
+    gs = GridSpec(2, 6, figure=fig)
     axes = [
         fig.add_subplot(gs[0, 0:2]),
         fig.add_subplot(gs[0, 2:4]),
@@ -222,12 +224,12 @@ def plot_mttf_by_pa(detail_rows: list[dict]) -> None:
         ax.plot(x, y_ta, marker="o", linewidth=2.2, color=_COLORS["TA-QTCID"], label="TA-QTCID")
 
         ax.set_title(_PANEL_TITLES[pa], fontsize=13)
-        ax.set_xlabel(r"$T_{IDS}$")
-        ax.set_ylabel("MTTF")
+        ax.set_xlabel(r"Интервал диагностики $T_{IDS}$, с")
+        ax.set_ylabel("Среднее время до отказа (MTTF), с")
         ax.grid(True, alpha=0.25)
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.01),
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.0),
                ncol=2, fontsize=12, frameon=True)
     plt.savefig(OUT_DIR / "fig_mttf_qtcid_vs_taqtcid.png", dpi=260, bbox_inches="tight")
     plt.close()
@@ -248,12 +250,12 @@ def plot_cmvi_by_pa(detail_rows: list[dict]) -> None:
         ax.plot(x, y_ta, marker="o", linewidth=2.2, color=_COLORS["TA-QTCID"], label="TA-QTCID")
 
         ax.set_title(_PANEL_TITLES[pa], fontsize=13)
-        ax.set_xlabel(r"$T_{IDS}$")
-        ax.set_ylabel("CMVI")
+        ax.set_xlabel(r"Интервал диагностики $T_{IDS}$, с")
+        ax.set_ylabel("Уязвимость (CMVI), усл. ед.")
         ax.grid(True, alpha=0.25)
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.01),
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.0),
                ncol=2, fontsize=12, frameon=True)
     plt.savefig(OUT_DIR / "fig_cmvi_qtcid_vs_taqtcid.png", dpi=260, bbox_inches="tight")
     plt.close()
@@ -271,7 +273,7 @@ def plot_cmvi_improvement(detail_rows: list[dict]) -> None:
 
         ax.plot(x, y, marker="o", linewidth=2.2, color="#1f77b4")
         ax.set_title(_PANEL_TITLES[pa], fontsize=13)
-        ax.set_xlabel(r"$T_{IDS}$")
+        ax.set_xlabel(r"Интервал диагностики $T_{IDS}$, с")
         ax.set_ylabel("Улучшение CMVI, %")
         ax.grid(True, alpha=0.25)
 
@@ -295,85 +297,90 @@ def plot_representative_bars(rep_rows: list[dict]) -> None:
         values.append(mean([float(r["cmvi_improvement_pct"]) for r in subset]))
 
     ax.bar(labels, values, edgecolor="black")
+    ax.set_xlabel(r"Интервал диагностики $T_{IDS}$, с")
     ax.set_ylabel("Среднее улучшение CMVI, %")
-    ax.set_title("Среднее улучшение CMVI: TA-QTCID относительно Q-TCID")
     ax.grid(True, axis="y", alpha=0.25)
     plt.tight_layout()
     plt.savefig(OUT_DIR / "fig_avg_cmvi_improvement_representative.png", dpi=260)
     plt.close()
 
 
-def format_latex_tables(detail_rows: list[dict], rep_rows: list[dict]) -> None:
-    """Генерирует LaTeX-таблицы для статьи."""
+def format_word_tables(detail_rows: list[dict], rep_rows: list[dict]) -> None:
+    """Генерирует HTML-таблицы для вставки в Word (копировать из браузера)."""
 
-    # --- Репрезентативная таблица (Pa x TIDS) ---
-    lines = []
-    lines.append(r"\begin{table}[htbp]")
-    lines.append(r"\centering")
-    lines.append(r"\caption{Сравнение Q-TCID и TA-QTCID по ключевым метрикам}")
-    lines.append(r"\label{tab:qtcid_vs_taqtcid_representative}")
-    lines.append(r"\small")
-    lines.append(
-        r"\begin{tabular}{cc"
-        r"|cc|cc"
-        r"|c}"
+    _CSS = """<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; }
+h3 { margin-top: 2em; }
+table { border-collapse: collapse; margin-bottom: 2em; }
+th, td { border: 1px solid #555; padding: 4px 10px; text-align: center; }
+th { background: #d0d8e8; }
+th.g2 { background: #a8b8d0; }
+tr:nth-child(even) td { background: #f5f5f5; }
+td.pa { font-weight: bold; background: #e8eef8; }
+td.better { color: #155215; font-weight: bold; }
+</style>"""
+
+    out_lines = [f"<!DOCTYPE html>\n<html lang='ru'>\n<head>\n<meta charset='utf-8'>\n{_CSS}\n</head>\n<body>"]
+
+    # ── Таблица 1: репрезентативная Pa × TIDS ───────────────────────────────
+    out_lines.append("<h3>Таблица 1. Сравнение Q-TCID и TA-QTCID по ключевым метрикам</h3>")
+    out_lines.append("<table>")
+    out_lines.append(
+        "<tr>"
+        "<th rowspan='2'>P<sub>a</sub></th>"
+        "<th rowspan='2'>T<sub>IDS</sub></th>"
+        "<th colspan='2' class='g2'>MTTF, с</th>"
+        "<th colspan='2' class='g2'>Точность</th>"
+        "<th colspan='2' class='g2'>Энергия, усл. ед.</th>"
+        "<th colspan='2' class='g2'>CMVI, усл. ед.</th>"
+        "<th rowspan='2'>ΔCMVI, %</th>"
+        "</tr>"
+        "<tr>"
+        "<th>Q-TCID</th><th>TA-QTCID</th>"
+        "<th>Q-TCID</th><th>TA-QTCID</th>"
+        "<th>Q-TCID</th><th>TA-QTCID</th>"
+        "<th>Q-TCID</th><th>TA-QTCID</th>"
+        "</tr>"
     )
-    lines.append(r"\hline")
-    lines.append(
-        r"$P_a$ & $T_{IDS}$ & "
-        r"\multicolumn{2}{c|}{MTTF} & "
-        r"\multicolumn{2}{c|}{CMVI} & "
-        r"$\Delta$CMVI, \% \\"
-    )
-    lines.append(
-        r" & & Q-TCID & TA-QTCID & Q-TCID & TA-QTCID & \\"
-    )
-    lines.append(r"\hline")
     prev_pa = None
     for r in rep_rows:
         pa = float(r["pa"])
         tids = int(r["tids"])
-        pa_str = f"{pa}" if pa != prev_pa else ""
+        pa_cell = f'<td class="pa">{pa}</td>' if pa != prev_pa else "<td></td>"
         prev_pa = pa
-        lines.append(
-            f"{pa_str} & {tids} & "
-            f"{float(r['q_mttf_mean']):.0f} & {float(r['ta_mttf_mean']):.0f} & "
-            f"{float(r['q_cmvi_mean']):.2f} & {float(r['ta_cmvi_mean']):.2f} & "
-            f"{float(r['cmvi_improvement_pct']):.1f} \\\\"
+        ta_cmvi = float(r["ta_cmvi_mean"])
+        q_cmvi = float(r["q_cmvi_mean"])
+        delta = float(r["cmvi_improvement_pct"])
+        cmvi_cls = ' class="better"' if ta_cmvi < q_cmvi else ""
+        delta_cls = ' class="better"' if delta > 0 else ""
+        out_lines.append(
+            f"<tr>{pa_cell}<td>{tids}</td>"
+            f"<td>{float(r['q_mttf_mean']):.0f}</td><td>{float(r['ta_mttf_mean']):.0f}</td>"
+            f"<td>{float(r['q_accuracy_mean']):.5f}</td><td>{float(r['ta_accuracy_mean']):.5f}</td>"
+            f"<td>{float(r['q_energy_spent_mean']):.1f}</td><td>{float(r['ta_energy_spent_mean']):.1f}</td>"
+            f"<td>{q_cmvi:.2f}</td><td{cmvi_cls}>{ta_cmvi:.2f}</td>"
+            f"<td{delta_cls}>{delta:.1f}</td></tr>"
         )
-    lines.append(r"\hline")
-    lines.append(r"\end{tabular}")
-    lines.append(r"\end{table}")
+    out_lines.append("</table>")
 
-    rep_tex = OUT_DIR / "table_qtcid_vs_taqtcid_representative.tex"
-    rep_tex.write_text("\n".join(lines), encoding="utf-8")
-
-    # --- Сводная таблица средних улучшений CMVI по Pa ---
-    lines2 = []
-    lines2.append(r"\begin{table}[htbp]")
-    lines2.append(r"\centering")
-    lines2.append(r"\caption{Среднее улучшение CMVI TA-QTCID над Q-TCID по $P_a$}")
-    lines2.append(r"\label{tab:cmvi_improvement_by_pa}")
-    lines2.append(r"\begin{tabular}{c|ccccccc|c}")
-    lines2.append(r"\hline")
-    tids_header = " & ".join(str(t) for t in TIDS_VALUES)
-    lines2.append(r"$P_a$ & " + tids_header + r" & Среднее \\")
-    lines2.append(r"\hline")
+    # ── Таблица 2: матрица улучшений CMVI по Pa × TIDS ─────────────────────
+    out_lines.append("<h3>Таблица 2. Улучшение CMVI TA-QTCID над Q-TCID, % (по P<sub>a</sub> и T<sub>IDS</sub>)</h3>")
+    out_lines.append("<table>")
+    header_cells = "".join(f"<th>T<sub>IDS</sub>={t}</th>" for t in TIDS_VALUES)
+    out_lines.append(f"<tr><th>P<sub>a</sub></th>{header_cells}<th>Среднее</th></tr>")
     for pa in PA_VALUES:
         subset = [r for r in detail_rows if float(r["pa"]) == pa]
         vals = [float(r["cmvi_improvement_pct"]) for r in subset]
         avg = mean(vals)
-        cells = " & ".join(f"{v:.1f}" for v in vals)
-        lines2.append(f"{pa} & {cells} & {avg:.1f} \\\\")
-    lines2.append(r"\hline")
-    lines2.append(r"\end{tabular}")
-    lines2.append(r"\end{table}")
+        cells = "".join(f"<td>{v:.1f}</td>" for v in vals)
+        out_lines.append(f"<tr><td class='pa'>{pa}</td>{cells}<td><b>{avg:.1f}</b></td></tr>")
+    out_lines.append("</table>")
 
-    imp_tex = OUT_DIR / "table_cmvi_improvement_by_pa.tex"
-    imp_tex.write_text("\n".join(lines2), encoding="utf-8")
+    out_lines.append("</body>\n</html>")
 
-    print(f"  {rep_tex}")
-    print(f"  {imp_tex}")
+    out = OUT_DIR / "tables_for_word.html"
+    out.write_text("\n".join(out_lines), encoding="utf-8")
+    print(f"  {out}")
 
 
 def main():
@@ -458,7 +465,7 @@ def main():
     plot_cmvi_by_pa(detail_rows)
     plot_cmvi_improvement(detail_rows)
     plot_representative_bars(rep_rows)
-    format_latex_tables(detail_rows, rep_rows)
+    format_word_tables(detail_rows, rep_rows)
 
     print("\nSaved:")
     print(OUT_DIR / "table_qtcid_vs_taqtcid_detailed.csv")

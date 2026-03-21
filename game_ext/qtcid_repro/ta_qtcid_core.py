@@ -43,6 +43,10 @@ class TAQTCIDConfig(QTCIDConfig):
     # extra CMVI sensitivity for trust-aware system
     trust_cmvi_reduction_bonus: float = 0.12
 
+    trust_mode: str = "adaptive"
+    # "adaptive"
+    # "no_penalty"
+    # "fixed" 
 
 class TAQTCIDSimulator(QTCIDSimulator):
     def __init__(self, cfg: TAQTCIDConfig, seed: int) -> None:
@@ -57,6 +61,8 @@ class TAQTCIDSimulator(QTCIDSimulator):
         self.trust_state = max(self.cfg.trust_min, min(self.cfg.trust_max, self.trust_state))
 
     def _trust_delta(self) -> float:
+        if self.cfg.trust_mode == "fixed":
+            return 0.0
         return max(0.0, self.trust_state - self.cfg.trust_init)
 
     # -----------------------------
@@ -133,10 +139,22 @@ class TAQTCIDSimulator(QTCIDSimulator):
             fp_rate = d_fp / total
             fn_rate = d_fn / total
 
-            self.trust_state += self.cfg.trust_gain_tp * tp_rate
-            self.trust_state += self.cfg.trust_gain_tn * tn_rate
-            self.trust_state -= self.cfg.trust_loss_fp * fp_rate
-            self.trust_state -= self.cfg.trust_loss_fn * fn_rate
+            if self.cfg.trust_mode == "adaptive":
+                self.trust_state += self.cfg.trust_gain_tp * tp_rate
+                self.trust_state += self.cfg.trust_gain_tn * tn_rate
+                self.trust_state -= self.cfg.trust_loss_fp * fp_rate
+                self.trust_state -= self.cfg.trust_loss_fn * fn_rate
+
+            elif self.cfg.trust_mode == "no_penalty":
+                self.trust_state += self.cfg.trust_gain_tp * tp_rate
+                self.trust_state += self.cfg.trust_gain_tn * tn_rate
+
+            elif self.cfg.trust_mode == "fixed":
+                pass
+
+            else:
+                raise ValueError(f"Unknown trust_mode: {self.cfg.trust_mode}")
+
             self._clip_trust()
 
     # -----------------------------

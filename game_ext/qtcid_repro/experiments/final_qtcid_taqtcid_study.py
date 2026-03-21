@@ -363,17 +363,41 @@ td.better { color: #155215; font-weight: bold; }
         )
     out_lines.append("</table>")
 
-    # ── Таблица 2: матрица улучшений CMVI по Pa × TIDS ─────────────────────
-    out_lines.append("<h3>Таблица 2. Улучшение CMVI TA-QTCID над Q-TCID, % (по P<sub>a</sub> и T<sub>IDS</sub>)</h3>")
+    # ── Таблица 2: абсолютные значения CMVI по Pa × TIDS ───────────────────
+    out_lines.append("<h3>Таблица 2. Абсолютные значения CMVI для Q-TCID и TA-QTCID (по P<sub>a</sub> и T<sub>IDS</sub>)</h3>")
     out_lines.append("<table>")
     header_cells = "".join(f"<th>T<sub>IDS</sub>={t}</th>" for t in TIDS_VALUES)
-    out_lines.append(f"<tr><th>P<sub>a</sub></th>{header_cells}<th>Среднее</th></tr>")
+    out_lines.append(
+        "<tr>"
+        "<th rowspan='2'>P<sub>a</sub></th>"
+        "<th rowspan='2'>Метод</th>"
+        f"<th colspan='{len(TIDS_VALUES)}' class='g2'>CMVI, усл. ед.</th>"
+        "<th rowspan='2'>Среднее</th>"
+        "</tr>"
+        f"<tr>{header_cells}</tr>"
+    )
     for pa in PA_VALUES:
         subset = [r for r in detail_rows if float(r["pa"]) == pa]
-        vals = [float(r["cmvi_improvement_pct"]) for r in subset]
-        avg = mean(vals)
-        cells = "".join(f"<td>{v:.1f}</td>" for v in vals)
-        out_lines.append(f"<tr><td class='pa'>{pa}</td>{cells}<td><b>{avg:.1f}</b></td></tr>")
+        by_tids = {int(r["tids"]): r for r in subset}
+
+        q_vals = [float(by_tids[t]["q_cmvi_mean"]) for t in TIDS_VALUES]
+        ta_vals = [float(by_tids[t]["ta_cmvi_mean"]) for t in TIDS_VALUES]
+        q_avg = mean(q_vals)
+        ta_avg = mean(ta_vals)
+
+        q_cells = "".join(f"<td>{v:.2f}</td>" for v in q_vals)
+        ta_cells = "".join(
+            ("<td class='better'>{:.2f}</td>" if ta_vals[i] < q_vals[i] else "<td>{:.2f}</td>").format(ta_vals[i])
+            for i in range(len(TIDS_VALUES))
+        )
+        avg_cls = ' class="better"' if ta_avg < q_avg else ""
+
+        out_lines.append(
+            f"<tr><td class='pa' rowspan='2'>{pa}</td><td>Q-TCID</td>{q_cells}<td>{q_avg:.2f}</td></tr>"
+        )
+        out_lines.append(
+            f"<tr><td>TA-QTCID</td>{ta_cells}<td{avg_cls}><b>{ta_avg:.2f}</b></td></tr>"
+        )
     out_lines.append("</table>")
 
     out_lines.append("</body>\n</html>")

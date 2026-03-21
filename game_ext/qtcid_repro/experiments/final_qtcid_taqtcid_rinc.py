@@ -27,6 +27,11 @@ MAX_TIME = 16000
 
 OUT_DIR = Path("results/rinc_m_voters_study")
 
+METHOD_COLORS = {
+    "Q-TCID": "#2ca02c",
+    "TA-QTCID": "#d62728",
+}
+
 
 def mean(values: list[float]) -> float:
     return statistics.mean(values) if values else 0.0
@@ -175,23 +180,57 @@ def plot_cmvi(rows: list[dict]) -> None:
     plt.close()
 
 
-def plot_improvement(rows: list[dict]) -> None:
-    fig, ax = plt.subplots(figsize=(8.8, 5.0))
+def plot_cmvi_bars_by_m(rows: list[dict]) -> None:
+    """
+    Компактный набор столбчатых диаграмм: для каждого m отдельный подграфик
+    с абсолютными значениями CMVI у методов Q-TCID и TA-QTCID.
+    """
+    m_vals = sorted([int(r["m_voters"]) for r in rows if r["method"] == "Q-TCID"])
 
-    x = [int(r["m_voters"]) for r in rows if r["method"] == "Q-TCID"]
-    imp = []
+    fig = plt.figure(figsize=(13.2, 7.2))
+    grid = fig.add_gridspec(2, 6)
+    axes = [
+        fig.add_subplot(grid[0, 0:2]),
+        fig.add_subplot(grid[0, 2:4]),
+        fig.add_subplot(grid[0, 4:6]),
+        fig.add_subplot(grid[1, 1:3]),
+        fig.add_subplot(grid[1, 3:5]),
+    ]
 
-    for m in x:
+    for ax, m in zip(axes, m_vals):
         q = next(r for r in rows if r["method"] == "Q-TCID" and int(r["m_voters"]) == m)
         ta = next(r for r in rows if r["method"] == "TA-QTCID" and int(r["m_voters"]) == m)
-        imp.append(safe_pct_improvement(float(q["cmvi_mean"]), float(ta["cmvi_mean"])))
 
-    ax.bar([str(v) for v in x], imp, edgecolor="black")
-    ax.set_xlabel("Число голосующих соседей m")
-    ax.set_ylabel("Снижение CMVI, %")
-    ax.grid(True, axis="y", alpha=0.25)
-    plt.tight_layout()
-    plt.savefig(OUT_DIR / "fig_cmvi_improvement_vs_m.png", dpi=260)
+        labels = ["Q-TCID", "TA-QTCID"]
+        values = [float(q["cmvi_mean"]), float(ta["cmvi_mean"])]
+        colors = [METHOD_COLORS[label] for label in labels]
+
+        bars = ax.bar(labels, values, color=colors, edgecolor="black", linewidth=1.0)
+
+        v_min = min(values)
+        v_max = max(values)
+        span = max(v_max - v_min, v_max * 0.08, 0.4)
+        lower = max(0.0, v_min - 0.35 * span)
+        upper = v_max + 0.45 * span
+        ax.set_ylim(lower, upper)
+
+        ax.set_title(rf"$m = {m}$")
+        ax.set_ylabel("CMVI, усл. ед.")
+        ax.grid(True, axis="y", alpha=0.25)
+
+        for bar, value in zip(bars, values):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value + 0.04 * span,
+                f"{value:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+            )
+
+    fig.suptitle("Абсолютные значения CMVI для Q-TCID и TA-QTCID при разных m", fontsize=14)
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.savefig(OUT_DIR / "fig_cmvi_absolute_bars_by_m.png", dpi=260)
     plt.close()
 
 
@@ -418,14 +457,14 @@ def main():
     write_csv(OUT_DIR / "table_m_voters_detailed.csv", rows)
     write_csv(OUT_DIR / "table_m_voters_compact.csv", compact_rows)
 
-    plot_improvement(rows)
+    plot_cmvi_bars_by_m(rows)
     plot_cmvi_component_improvement(rows)
     plot_cmvi_dumbbell(rows)
 
     print("\nSaved:")
     print(OUT_DIR / "table_m_voters_detailed.csv")
     print(OUT_DIR / "table_m_voters_compact.csv")
-    print(OUT_DIR / "fig_cmvi_improvement_vs_m.png")
+    print(OUT_DIR / "fig_cmvi_absolute_bars_by_m.png")
     print(OUT_DIR / "fig_cmvi_component_improvement_vs_m.png")
     print(OUT_DIR / "fig_cmvi_dumbbell_vs_m.png")
 

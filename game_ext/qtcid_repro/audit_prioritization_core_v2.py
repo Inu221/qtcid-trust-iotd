@@ -498,6 +498,39 @@ class AuditPrioritizationSimulator:
 
         return max(0.0, score)
 
+    def compute_history_no_stability_score(self, nid: int) -> float:
+        """
+        History-based priority score БЕЗ stability penalty (для ablation study).
+
+        Использует:
+        - текущий disagreement
+        - текущий anomaly
+        - EMA mismatch
+        - persistence score
+        Но НЕ вычитает stability penalty.
+        """
+        if nid in self.evicted_node_ids:
+            return -1.0
+
+        hist = self.node_histories[nid]
+
+        # Текущие признаки
+        current_disagreement = hist.disagreement_history[-1] if hist.disagreement_history else 0.0
+        current_anomaly = float(hist.anomaly_count_history[-1]) if hist.anomaly_count_history else 0.0
+
+        # История (без stability)
+        ema_mismatch = hist.ema_mismatch
+        persistence = self._compute_persistence_score(hist)
+
+        score = (
+            self.cfg.priority_current_disagreement * current_disagreement
+            + self.cfg.priority_current_anomaly * current_anomaly
+            + self.cfg.priority_ema_mismatch * ema_mismatch
+            + self.cfg.priority_persistence * persistence
+        )
+
+        return max(0.0, score)
+
     def _compute_persistence_score(self, hist: NodeHistory) -> float:
         """
         Persistence score: насколько часто узел вызывает тревоги.
@@ -538,6 +571,12 @@ class AuditPrioritizationSimulator:
 
         elif self.cfg.prioritization_mode == "history_based":
             scores = [(nid, self.compute_history_based_score(nid)) for nid in active]
+            scores.sort(key=lambda x: x[1], reverse=True)
+            return [nid for nid, _ in scores[:budget]]
+
+        elif self.cfg.prioritization_mode == "history_no_stability":
+            # Ablation: history без stability penalty
+            scores = [(nid, self.compute_history_no_stability_score(nid)) for nid in active]
             scores.sort(key=lambda x: x[1], reverse=True)
             return [nid for nid, _ in scores[:budget]]
 

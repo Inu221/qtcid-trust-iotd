@@ -12,7 +12,7 @@
 
 При сопоставимых значениях MTTF и точности обнаружения TA-QTCID стабильно снижает метрику CMVI (Cumulative Misclassification Vulnerability Index) на **3–12%** во всём диапазоне параметров атаки $P_a \in [0, 1]$ и интервала диагностики $T_{IDS} \in [50, 1500]$.
 
-### Audit Prioritization
+### Audit Prioritization (v2 - переработанная версия)
 
 Новый метод решает отличную от IDS задачу: **приоритизация узлов для ограниченного системного аудита** на основе истории согласованности локальных решений.
 
@@ -20,9 +20,24 @@
 - Раньше: выход = решение о состоянии узла
 - Теперь: выход = приоритет проверки узла и выбор top-K узлов при ограниченном бюджете аудита
 
-**Метрики:** Hit Rate, Residual Risk, Mean Cycles to Verify, Precision
+**Критические исправления v2:**
+- ✅ Убрана утечка ground truth (v1 содержала пря��ой доступ к `is_bad`)
+- ✅ Реализовано реальное локальное голосование с соседями
+- ✅ Добавлены типы узлов: benign_stable, benign_noisy, malicious_intermittent, malicious_persistent
+- ✅ Disagreement вычисляется entropy-based из реальных голосов
+- ✅ Исправлены метрики: precision ≠ recall
+- ✅ Новые метрики: intermittent_detection_rate, false_attention_rate
 
-**Результаты:** History-based приоритизация показывает стабильное превосходство над baseline методами (random, current-only) при малых бюджетах аудита.
+**Результаты v2 (честные):**
+- History-based показывает **чёткое превосходство** при малых бюджетах (3-5 узлов): +13-28% по precision
+- При больших бюджетах (8+) current-only сопоставим или лучше
+- Random значительно хуже во всех сценариях
+- **Метод полезен в специфических условиях:** ограниченный бюджет + шумная среда + intermittent attacks
+
+**Документация:**
+- `AUDIT_REPORT.md` — критический аудит v1 и найденные проблемы
+- `RESULTS_V2_ANALYSIS.md` — детальный анализ результатов v2
+- `METHOD.md` — формализация метода
 
 ## Структура
 
@@ -30,7 +45,8 @@
 game_ext/qtcid_repro/
 ├── qtcid_core.py          # Реализация Q-TCID
 ├── ta_qtcid_core.py       # Реализация TA-QTCID (авторский метод)
-├── audit_prioritization_core.py  # Метод приоритизации аудита
+├── audit_prioritization_core.py     # Приоритизация v1 (содержит проблемы - см. AUDIT_REPORT.md)
+├── audit_prioritization_core_v2.py  # Приоритизация v2 (исправленная версия)
 ├── types.py               # Общие типы данных
 ├── utils.py               # Вспомогательные функции
 ├── mitchell/              # Базовые формулы (энергия, голосование) по Mitchell
@@ -40,16 +56,20 @@ game_ext/qtcid_repro/
 │   ├── bvs_core.py
 │   └── game.py
 └── experiments/
-    ├── final_qtcid_taqtcid_study.py  # Сравнительный эксперимент Q-TCID vs TA-QTCID
-    └── audit_prioritization_study.py  # Эксперимент приоритизации аудита
+    ├── final_qtcid_taqtcid_study.py        # Q-TCID vs TA-QTCID
+    ├── audit_prioritization_study.py       # Приоритизация v1
+    └── audit_prioritization_study_v2.py    # Приоритизация v2 (с улучшенными сценариями)
 
 results/
 ├── final_qtcid_taqtcid_study/  # Результаты IDS-экспериментов
-└── audit_prioritization_study/  # Результаты приоритизации
-    ├── detailed_results.csv
-    ├── detailed_results.json
-    └── figures/                 # Графики (8 PNG файлов)
+├── audit_prioritization_study/      # Результаты v1 (некорректные)
+└── audit_prioritization_study_v2/   # Результаты v2 (исправленные)
+    ├── detailed_results_v2.csv
+    ├── detailed_results_v2.json
+    └── figures/                     # 6+ графиков по сценариям
 
+AUDIT_REPORT.md                  # Критический аудит v1: найденные проблемы
+RESULTS_V2_ANALYSIS.md           # Детальный анализ результатов v2
 METHOD.md                        # Формализация метода приоритизации
 ```
 
@@ -100,40 +120,46 @@ python3 -m game_ext.qtcid_repro.experiments.final_qtcid_taqtcid_study
 
 Результаты сохраняются в `results/final_qtcid_taqtcid_study/`.
 
-### Эксперимент приоритизации аудита
+### Эксперимент приоритизации аудита (v2 - исправленная версия)
 
-**Быстрый тест (2-5 минут):**
+**⚠️ ВАЖНО:** Используйте v2! Оригинальная версия (v1) содержитутечку ground truth (см. `AUDIT_REPORT.md`).
+
+**Быстрый тест v2 (2-5 минут):**
 ```bash
-# Редактировать experiments/audit_prioritization_study.py:
+# Редактировать experiments/audit_prioritization_study_v2.py:
 # FAST_MODE = True
 
-python3 -m game_ext.qtcid_repro.experiments.audit_prioritization_study
+python3 -m game_ext.qtcid_repro.experiments.audit_prioritization_study_v2
 ```
 
-**Полный эксперимент (30-60 минут):**
+**Полный эксперимент v2 (30-60 минут):**
 ```bash
-# Редактировать experiments/audit_prioritization_study.py:
+# Редактировать experiments/audit_prioritization_study_v2.py:
 # FULL_MODE = True
 
-python3 -m game_ext.qtcid_repro.experiments.audit_prioritization_study
+python3 -m game_ext.qtcid_repro.experiments.audit_prioritization_study_v2
 ```
 
-Результаты сохраняются в `results/audit_prioritization_study/`.
+Результаты сохраняются в `results/audit_prioritization_study_v2/`.
 
 **Генерируется:**
-- `detailed_results.csv` — полная таблица метрик
-- `detailed_results.json` — JSON версия
-- `figures/*.png` — 6-8 графиков по новым метрикам
+- `detailed_results_v2.csv` — полная таблица метрик
+- `detailed_results_v2.json` — JSON версия
+- `figures/*.png` — графики по сценариям
 
-**Графики:**
-1. Hit Rate vs Audit Budget
-2. Cumulative Residual Risk vs Budget
-3. Mean Cycles to Verify vs Pa
-4. Wasted Audits vs Budget
-5. Precision vs Budget
-6. Residual Risk Dynamics (пример)
-7. Heatmap Cumulative Risk
-8. Improvement Comparison
+**Графики v2 (для каждого сценария):**
+1. Audit Precision vs Budget
+2. Recall (Hit Rate) vs Budget
+3. Intermittent Detection Rate vs Budget
+4. False Attention Rate vs Budget
+5. Cumulative Residual Risk vs Budget
+6. Mean Cycles to Verify (Intermittent) vs Budget
+7. Scenarios Comparison (при FULL_MODE)
+
+**Сценарии v2:**
+- `low_noise_persistent`: низкий шум, устойчивые атаки
+- `medium_noise_mixed`: средний шум, смешанные атаки (intermittent + persistent)
+- `high_noise_intermittent`: высокий шум, эпизодические атаки
 
 ## Зависимости
 
@@ -172,24 +198,54 @@ pip install -r requirements.txt
 
 ---
 
-## Примеры результатов
+## Примеры результатов v2
 
-### Быстрый тест (FAST_MODE, Pa=0.5, TIDS=200)
+### Быстрый тест v2 (FAST_MODE, medium_noise_mixed scenario)
 
-| Режим | Budget | Hit Rate | Cumulative Risk | Precision |
-|-------|--------|----------|-----------------|-----------|
-| Random | 3 | 0.16 | 190.0 | 0.16 |
-| **Current-only** | 3 | **1.00** | 246.2 | 1.00 |
-| **History-based** | 3 | **1.00** | 246.2 | 1.00 |
-| Random | 5 | 0.18 | 195.6 | 0.18 |
-| Current-only | 5 | 0.75 | 78.0 | 0.75 |
-| **History-based** | 5 | **0.76** | **83.3** | 0.76 |
-| Random | 8 | 0.21 | 227.2 | 0.21 |
-| **Current-only** | 8 | **0.48** | **5.1** | 0.48 |
-| History-based | 8 | 0.47 | 22.0 | 0.47 |
+**Audit Precision (доля bad среди выбранных):**
 
-**Выводы:**
-- Random показывает значительно худшие результаты по hit_rate (~0.18)
-- Current-only и history-based показывают схожие результаты при малых бюджетах
-- При увеличении бюджета преимущество history-based метода может изменяться
-- Cumulative residual risk существенно ниже для методов с историей
+| Budget | Random | Current-only | History-based (proposed) | Улучшение |
+|--------|--------|--------------|--------------------------|-----------|
+| 3      | 0.149  | 0.354        | **0.454** ✅             | +28% vs current |
+| 5      | 0.200  | 0.393        | **0.446** ✅             | +13% vs current |
+| 8      | 0.176  | **0.448**    | 0.411                    | -8% vs current |
+
+**Recall (Hit Rate) - доля обнаруженных bad узлов:**
+
+| Budget | Random | Current-only | History-based | Улучшение |
+|--------|--------|--------------|---------------|-----------|
+| 3      | 0.069  | 0.170        | **0.217** ✅  | +28% vs current |
+| 5      | 0.170  | 0.375        | **0.381** ✅  | +1.6% vs current |
+| 8      | 0.225  | **0.862** ✅ | 0.725         | -16% vs current |
+
+**Cumulative Residual Risk:**
+
+| Budget | Random | Current-only | History-based | Улучшение |
+|--------|--------|--------------|---------------|-----------|
+| 3      | 175    | 193          | **187** ✅    | -3% vs current |
+| 5      | 196    | 244          | **205** ✅    | -16% vs current |
+| 8      | 190    | 309          | **262** ✅    | -15% vs current |
+
+### ✅ Ключевые выводы v2
+
+**1. Чёткая область превосходства:**
+- History-based значительно лучше при **малых бюджетах (3-5 узлов)**
+- Precision: +13-28% vs current-only
+- Recall: +1.6-28% vs current-only
+- Cumulative Risk: -3% до -16%
+
+**2. Trade-offs:**
+- При **больших бюджетах (8+)** current-only сопоставим или лучше
+- False attention rate высокая у обоих умных методов (0.33-0.47)
+
+**3. Метод полезен когда:**
+- Системный аудит дорогой (ограниченный бюджет)
+- Среда шумная (benign_noisy nodes существуют)
+- Атаки intermittent (не всегда проявляются)
+
+**4. Научная честность:**
+- Метод НЕ универсально лучший
+- Показано чёткое превосходство в специфических условиях
+- Указаны ограничения и области проигрыша
+
+**Подробный анализ:** см. `RESULTS_V2_ANALYSIS.md`

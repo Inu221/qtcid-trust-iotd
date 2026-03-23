@@ -14,11 +14,19 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from dataclasses import asdict
 import csv
 import json
+import os
+from pathlib import Path
+import sys
 import time
+
+# Allow running the script directly from `experiments/` without installing the repo
+# as a package first.
+REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from game_ext.qtcid_repro.audit_prioritization_core_v2 import (
     AuditPrioritizationConfig,
@@ -40,7 +48,7 @@ from game_ext.qtcid_repro.experiments.visualization_article_ru import (
 # FAST_MODE: быстрое тестирование (меньше точек, меньше прогонов)
 # ARTICLE_MODE: полный эксперимент для статьи
 
-MODE = "FAST"  # "FAST" или "ARTICLE"
+MODE = os.environ.get("AUDIT_PRIORITIZATION_MODE", "FAST").strip().upper()
 
 if MODE == "FAST":
     AUDIT_BUDGET_VALUES = [3, 5, 8]
@@ -99,7 +107,7 @@ TIDS = 200
 PA = 0.5
 
 # Директории для результатов
-OUT_DIR = Path("results/audit_prioritization_article")
+OUT_DIR = REPO_ROOT / "results" / "audit_prioritization_article"
 FIGURES_DIR = OUT_DIR / "figures_article_ru"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 FIGURES_DIR.mkdir(parents=True, exist_ok=True)

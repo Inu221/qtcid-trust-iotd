@@ -43,26 +43,20 @@ COLORS = {
 
 LABELS_RU = {
     "history_based": "Предлагаемый метод",
-    "current_only": "Только текущие
-наблюдения",
+    "current_only": "Только текущие\nнаблюдения",
     "random": "Случайный выбор",
-    "history_no_stability": "С историей без компонента
-стабильности",
+    "history_no_stability": "С историей без компонента\nстабильности",
 }
 
 MAIN_METHOD_ORDER = ["history_based", "current_only", "random"]
 ABLATION_METHOD_ORDER = ["current_only", "history_no_stability", "history_based"]
 
-X_LABEL_BUDGET = "Бюджет системной проверки,
-узлов за цикл"
+X_LABEL_BUDGET = "Бюджет системной проверки,\nузлов за цикл"
 Y_LABEL_OBSERVER_ERROR = "Уровень ошибки наблюдателя, %"
 Y_LABEL_IMPROVEMENT = "Улучшение точности отбора, %"
-Y_LABEL_PRECISION = "Точность отбора узлов
-на проверку"
-Y_LABEL_RECALL = "Полнота выявления
-проблемных узлов"
-Y_LABEL_FALSE_ATTENTION = "Ложные проверки корректных
-шумных узлов, доля"
+Y_LABEL_PRECISION = "Точность отбора узлов\nна проверку"
+Y_LABEL_RECALL = "Полнота выявления\nпроблемных узлов"
+Y_LABEL_FALSE_ATTENTION = "Ложные проверки корректных\nшумных узлов, доля"
 
 
 def _as_dataframe(results: Iterable[dict]) -> pd.DataFrame:
@@ -292,17 +286,20 @@ def plot_article_figure_2_main_panel(
         handles,
         labels,
         loc="lower center",
-        bbox_to_anchor=(0.5, 0.03),
+        bbox_to_anchor=(0.5, 0.01),
         ncol=3,
+        columnspacing=1.4,
+        handlelength=2.4,
+        fontsize=11.5,
         frameon=False,
     )
     fig.subplots_adjust(
         left=0.08,
         right=0.98,
         top=0.96,
-        bottom=0.14,
+        bottom=0.22,
         wspace=0.42,
-        hspace=0.68,
+        hspace=0.72,
     )
     _save_figure(fig, output_path)
 
@@ -354,9 +351,20 @@ def plot_article_figure_3_ablation(
     ax.set_xticks(budgets)
     ax.set_xlim(min(budgets) - 0.3, max(budgets) + 0.3)
     ax.set_ylim(*_metric_ylim(grouped["audit_precision_mean"].values, lower_bound=0.0, upper_bound=1.0))
-    ax.legend(loc="upper left", frameon=False)
     _style_axis(ax)
-    fig.tight_layout()
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.01),
+        ncol=3,
+        columnspacing=1.4,
+        handlelength=2.4,
+        fontsize=11.5,
+        frameon=False,
+    )
+    fig.subplots_adjust(left=0.11, right=0.98, top=0.96, bottom=0.24)
     _save_figure(fig, output_path)
 
 

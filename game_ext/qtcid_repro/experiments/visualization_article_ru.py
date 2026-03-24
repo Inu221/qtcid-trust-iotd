@@ -1,447 +1,410 @@
 """
-Модуль визуализации для статьи с полной русификацией.
+Финальная визуализация для статьи по приоритизации системной проверки.
 
-Создаёт профессиональные графики с использованием seaborn:
-1. Line plots с confidence bands
-2. Heatmap улучшения history vs current
-3. Grouped bar chart для главного сценария
-4. Ablation plot
+Модуль формирует три основных рисунка и финальную сводную таблицу для статьи.
 """
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
-from typing import List, Dict
+from typing import Iterable
+
+import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import FormatStrFormatter
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-from scipy import stats
 
-# Настройка стиля
 sns.set_theme(style="whitegrid", context="paper")
-plt.rcParams['font.family'] = 'DejaVu Sans'
-plt.rcParams['font.size'] = 11
-plt.rcParams['axes.labelsize'] = 12
-plt.rcParams['axes.titlesize'] = 13
-plt.rcParams['xtick.labelsize'] = 10
-plt.rcParams['ytick.labelsize'] = 10
-plt.rcParams['legend.fontsize'] = 10
-plt.rcParams['figure.titlesize'] = 14
+plt.rcParams.update({
+    "font.family": "DejaVu Sans",
+    "font.size": 11,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "figure.titlesize": 12,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "pdf.fonttype": 42,
+    "ps.fonttype": 42,
+    "svg.fonttype": "none",
+})
 
-# Цвета для методов
 COLORS = {
-    "random": "#ff7f0e",
-    "current_only": "#2ca02c",
-    "history_based": "#d62728",
-    "history_no_stability": "#9467bd",
+    "history_based": "#2ca02c",
+    "current_only": "#ff7f0e",
+    "random": "#7f7f7f",
+    "history_no_stability": "#1f77b4",
 }
 
-# Русские метки для методов
 LABELS_RU = {
+    "history_based": "Предлагаемый метод",
+    "current_only": "Только текущие
+наблюдения",
     "random": "Случайный выбор",
-    "current_only": "Только текущие наблюдения",
-    "history_based": "С историей (предлагаемый)",
-    "history_no_stability": "С историей без стабильности",
+    "history_no_stability": "С историей без компонента
+стабильности",
 }
 
-# Русские метки для сценариев
-SCENARIO_LABELS_RU = {
-    "low_noise_persistent": "Низкий шум, устойчивые атаки",
-    "medium_noise_mixed": "Средний шум, смешанные атаки",
-    "high_noise_intermittent": "Высокий шум, эпизодические атаки",
-}
+MAIN_METHOD_ORDER = ["history_based", "current_only", "random"]
+ABLATION_METHOD_ORDER = ["current_only", "history_no_stability", "history_based"]
+
+X_LABEL_BUDGET = "Бюджет системной проверки,
+узлов за цикл"
+Y_LABEL_OBSERVER_ERROR = "Уровень ошибки наблюдателя, %"
+Y_LABEL_IMPROVEMENT = "Улучшение точности отбора, %"
+Y_LABEL_PRECISION = "Точность отбора узлов
+на проверку"
+Y_LABEL_RECALL = "Полнота выявления
+проблемных узлов"
+Y_LABEL_FALSE_ATTENTION = "Ложные проверки корректных
+шумных узлов, доля"
 
 
-def compute_confidence_interval(values: List[float], confidence: float = 0.95) -> tuple:
-    """Вычислить доверительный интервал"""
-    if len(values) < 2:
-        return 0.0, 0.0
-
-    mean = np.mean(values)
-    sem = stats.sem(values)
-    ci = sem * stats.t.ppf((1 + confidence) / 2, len(values) - 1)
-    return mean - ci, mean + ci
+def _as_dataframe(results: Iterable[dict]) -> pd.DataFrame:
+    return pd.DataFrame(list(results)).copy()
 
 
-def prepare_data_with_ci(results: List[dict], group_keys: List[str], value_key: str) -> pd.DataFrame:
-    """
-    Подготовить данные с доверительными интервалами.
 
-    Группирует результаты по group_keys и вычисляет mean, ci_low, ci_high для value_key.
-    """
-    df = pd.DataFrame(results)
+def _filter_dataframe(df: pd.DataFrame, filter_dict: dict | None = None) -> pd.DataFrame:
+    if not filter_dict:
+        return df.copy()
 
-    # Группировать и вычислить статистику
-    grouped = df.groupby(group_keys)[value_key].apply(list).reset_index()
-
-    stats_data = []
-    for _, row in grouped.iterrows():
-        values = row[value_key]
-        mean_val = np.mean(values)
-        ci_low, ci_high = compute_confidence_interval(values)
-
-        record = {k: row[k] for k in group_keys}
-        record.update({
-            'mean': mean_val,
-            'ci_low': ci_low,
-            'ci_high': ci_high,
-            'std': np.std(values),
-        })
-        stats_data.append(record)
-
-    return pd.DataFrame(stats_data)
+    subset = df.copy()
+    for key, value in filter_dict.items():
+        subset = subset[subset[key] == value]
+    return subset
 
 
-# -----------------------------------------------------------------------------
-# 1. Line plots с confidence bands
-# -----------------------------------------------------------------------------
 
-def plot_line_with_ci(
-    results: List[dict],
-    x_key: str,
-    value_key: str,
-    group_key: str,
-    filter_dict: dict,
-    title: str,
-    xlabel: str,
-    ylabel: str,
+def _aggregate_metric(df: pd.DataFrame, group_keys: list[str], metric_key: str) -> pd.DataFrame:
+    return df.groupby(group_keys, as_index=False)[metric_key].mean()
+
+
+
+def _metric_ylim(
+    values: Iterable[float],
+    lower_bound: float = 0.0,
+    upper_bound: float | None = 1.0,
+) -> tuple[float, float]:
+    clean_values = [float(value) for value in values if pd.notna(value)]
+    if not clean_values:
+        if upper_bound is None:
+            return lower_bound, lower_bound + 1.0
+        return lower_bound, upper_bound
+
+    min_value = min(clean_values)
+    max_value = max(clean_values)
+    span = max(max_value - min_value, 0.06)
+    y_min = min_value - 0.15 * span
+    y_max = max_value + 0.15 * span
+
+    if lower_bound is not None:
+        y_min = max(lower_bound, y_min)
+    if upper_bound is not None:
+        y_max = min(upper_bound, y_max)
+
+    if y_max <= y_min:
+        y_max = y_min + 0.1
+    return y_min, y_max
+
+
+
+def _style_axis(ax: plt.Axes) -> None:
+    ax.grid(True, axis="y", linestyle="--", linewidth=0.8, alpha=0.25)
+    ax.grid(False, axis="x")
+    ax.tick_params(axis="both", pad=4)
+
+
+
+def _add_panel_label(ax: plt.Axes, label: str) -> None:
+    ax.text(
+        0.5,
+        1.08,
+        label,
+        transform=ax.transAxes,
+        ha="center",
+        va="bottom",
+        fontsize=13,
+        fontweight="normal",
+    )
+
+
+
+def _save_figure(fig: plt.Figure, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", pad_inches=0.12)
+    fig.savefig(output_path.with_suffix(".pdf"), bbox_inches="tight", pad_inches=0.12)
+    plt.close(fig)
+
+
+
+def plot_article_figure_1_heatmap(
+    results: Iterable[dict],
+    scenario: str,
     output_path: Path,
-    figsize: tuple = (10, 6),
-):
-    """
-    Line plot с confidence bands.
-
-    Parameters:
-    - results: список словарей с результатами
-    - x_key: ключ для оси X (например, "audit_budget")
-    - value_key: ключ для значения на оси Y
-    - group_key: ключ для группировки линий (например, "mode")
-    - filter_dict: фильтры для subset (например, {"scenario": "medium_noise_mixed"})
-    - title, xlabel, ylabel: русские подписи
-    - output_path: путь для сохранения
-    """
-    # Фильтрация
-    subset = [r for r in results if all(r.get(k) == v for k, v in filter_dict.items())]
-
-    if not subset:
-        print(f"Нет данных для {filter_dict}")
+) -> None:
+    """Рисунок 1: heatmap улучшения точности отбора предлагаемого метода."""
+    df = _filter_dataframe(_as_dataframe(results), {"scenario": scenario})
+    if df.empty:
+        print(f"Нет данных для рисунка 1: scenario={scenario}")
         return
 
-    # Подготовить данные с CI
-    df_stats = prepare_data_with_ci(subset, [x_key, group_key], value_key)
+    grouped = _aggregate_metric(
+        df,
+        ["audit_budget", "observer_error", "mode"],
+        "audit_precision_mean",
+    )
+    budgets = sorted(grouped["audit_budget"].unique())
+    errors = sorted(grouped["observer_error"].unique())
 
-    fig, ax = plt.subplots(figsize=figsize)
+    heatmap = pd.DataFrame(
+        index=[round(error * 100) for error in errors],
+        columns=budgets,
+        dtype=float,
+    )
+    for budget in budgets:
+        for error in errors:
+            current_values = grouped[
+                (grouped["audit_budget"] == budget)
+                & (grouped["observer_error"] == error)
+                & (grouped["mode"] == "current_only")
+            ]["audit_precision_mean"].values
+            proposed_values = grouped[
+                (grouped["audit_budget"] == budget)
+                & (grouped["observer_error"] == error)
+                & (grouped["mode"] == "history_based")
+            ]["audit_precision_mean"].values
 
-    groups = df_stats[group_key].unique()
-    for group in groups:
-        group_data = df_stats[df_stats[group_key] == group].sort_values(x_key)
+            if len(current_values) == 0 or len(proposed_values) == 0 or current_values[0] <= 0:
+                heatmap.loc[round(error * 100), budget] = np.nan
+                continue
 
-        x = group_data[x_key].values
-        y = group_data['mean'].values
-        ci_low = group_data['ci_low'].values
-        ci_high = group_data['ci_high'].values
+            heatmap.loc[round(error * 100), budget] = (
+                100.0 * (proposed_values[0] - current_values[0]) / current_values[0]
+            )
 
-        color = COLORS.get(group, "#333333")
-        label = LABELS_RU.get(group, group)
-
-        # Линия
-        ax.plot(x, y, marker='o', linewidth=2.5, color=color, label=label, markersize=7)
-
-        # Confidence band
-        ax.fill_between(x, ci_low, ci_high, color=color, alpha=0.2)
-
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(title, fontsize=13, pad=15)
-    ax.legend(loc='best', frameon=True, shadow=True)
-    ax.grid(True, alpha=0.3, linestyle='--')
-
-    plt.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.with_suffix('.pdf'), bbox_inches='tight')
-    plt.close()
-
-
-# -----------------------------------------------------------------------------
-# 2. Heatmap улучшения
-# -----------------------------------------------------------------------------
-
-def plot_improvement_heatmap(
-    results: List[dict],
-    metric_key: str,
-    title: str,
-    output_path: Path,
-    filter_dict: dict = None,
-    figsize: tuple = (10, 7),
-):
-    """
-    Heatmap улучшения history_based относительно current_only.
-
-    По осям: audit_budget × observer_error
-    Значения: относительное улучшение (history - current) / current * 100%
-    """
-    subset = results
-    if filter_dict:
-        subset = [r for r in subset if all(r.get(k) == v for k, v in filter_dict.items())]
-
-    if not subset:
-        print(f"Нет данных для heatmap: {filter_dict}")
+    valid_values = heatmap.to_numpy(dtype=float)
+    valid_values = valid_values[~np.isnan(valid_values)]
+    if valid_values.size == 0:
+        print("Нет значений для рисунка 1")
         return
 
-    df = pd.DataFrame(subset)
+    max_abs = float(np.max(np.abs(valid_values)))
+    color_limit = max(10.0, math.ceil(max_abs / 10.0) * 10.0)
+    annotations = heatmap.apply(
+        lambda column: column.map(lambda value: "" if pd.isna(value) else f"{value:+.1f}")
+    )
 
-    # Вычислить mean для каждой комбинации
-    df_agg = df.groupby(['audit_budget', 'observer_error', 'mode'])[metric_key].mean().reset_index()
+    fig, ax = plt.subplots(figsize=(9.4, 6.2))
+    cmap = sns.diverging_palette(15, 130, as_cmap=True)
+    sns.heatmap(
+        heatmap,
+        ax=ax,
+        cmap=cmap,
+        center=0.0,
+        vmin=-color_limit,
+        vmax=color_limit,
+        annot=annotations,
+        fmt="",
+        linewidths=1.0,
+        linecolor="white",
+        cbar_kws={"label": Y_LABEL_IMPROVEMENT},
+    )
 
-    # Создать таблицу improvement
-    budgets = sorted(df_agg['audit_budget'].unique())
-    errors = sorted(df_agg['observer_error'].unique())
-
-    improvement_matrix = np.zeros((len(errors), len(budgets)))
-
-    for i, err in enumerate(errors):
-        for j, budget in enumerate(budgets):
-            current_val = df_agg[(df_agg['audit_budget'] == budget) &
-                                  (df_agg['observer_error'] == err) &
-                                  (df_agg['mode'] == 'current_only')][metric_key].values
-            history_val = df_agg[(df_agg['audit_budget'] == budget) &
-                                  (df_agg['observer_error'] == err) &
-                                  (df_agg['mode'] == 'history_based')][metric_key].values
-
-            if len(current_val) > 0 and len(history_val) > 0 and current_val[0] > 0:
-                improvement = (history_val[0] - current_val[0]) / current_val[0] * 100
-                improvement_matrix[i, j] = improvement
-
-    fig, ax = plt.subplots(figsize=figsize)
-
-    # Heatmap
-    im = ax.imshow(improvement_matrix, cmap='RdYlGn', aspect='auto', vmin=-30, vmax=30)
-
-    # Подписи осей
-    ax.set_xticks(np.arange(len(budgets)))
-    ax.set_yticks(np.arange(len(errors)))
-    ax.set_xticklabels(budgets)
-    ax.set_yticklabels([f"{e:.2f}" for e in errors])
-
-    ax.set_xlabel("Бюджет системной проверки (узлов за цикл)", fontsize=12)
-    ax.set_ylabel("Уровень ошибки наблюдателя", fontsize=12)
-    ax.set_title(title, fontsize=13, pad=15)
-
-    # Аннотации
-    for i in range(len(errors)):
-        for j in range(len(budgets)):
-            val = improvement_matrix[i, j]
-            text = ax.text(j, i, f"{val:+.1f}%", ha="center", va="center",
-                          color="black" if abs(val) < 15 else "white", fontsize=9)
-
-    # Colorbar
-    cbar = plt.colorbar(im, ax=ax)
-    cbar.set_label("Улучшение (%)", rotation=270, labelpad=20, fontsize=11)
-
-    plt.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.with_suffix('.pdf'), bbox_inches='tight')
-    plt.close()
+    ax.set_xlabel(X_LABEL_BUDGET, labelpad=10)
+    ax.set_ylabel(Y_LABEL_OBSERVER_ERROR, labelpad=10)
+    ax.tick_params(axis="x", rotation=0)
+    ax.tick_params(axis="y", rotation=0)
+    cbar = ax.collections[0].colorbar
+    cbar.ax.yaxis.set_major_formatter(FormatStrFormatter("%.0f"))
+    cbar.set_label(Y_LABEL_IMPROVEMENT, rotation=270, labelpad=18)
+    fig.tight_layout()
+    _save_figure(fig, output_path)
 
 
-# -----------------------------------------------------------------------------
-# 3. Grouped bar chart
-# -----------------------------------------------------------------------------
 
-def plot_grouped_bar_chart(
-    results: List[dict],
-    metrics: List[tuple],  # [(metric_key, ylabel), ...]
-    budgets: List[int],
-    filter_dict: dict,
-    title: str,
-    output_path: Path,
-    figsize: tuple = (14, 10),
-):
-    """
-    Grouped bar chart для нескольких метрик при разных бюджетах.
-
-    Parameters:
-    - metrics: список кортежей (metric_key, ylabel)
-    - budgets: список значений бюджета для отображения
-    """
-    subset = [r for r in results if all(r.get(k) == v for k, v in filter_dict.items())]
-
-    if not subset:
-        print(f"Нет данных для grouped bar chart: {filter_dict}")
-        return
-
-    df = pd.DataFrame(subset)
-    df = df[df['audit_budget'].isin(budgets)]
-
-    n_metrics = len(metrics)
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    axes = axes.flatten()
-
-    modes = ['random', 'current_only', 'history_based']
-    x = np.arange(len(budgets))
-    width = 0.25
-
-    for idx, (metric_key, ylabel) in enumerate(metrics):
-        if idx >= len(axes):
-            break
-
-        ax = axes[idx]
-
-        for i, mode in enumerate(modes):
-            mode_data = df[df['mode'] == mode].groupby('audit_budget')[metric_key].mean().reindex(budgets, fill_value=0)
-            ax.bar(x + i * width, mode_data.values, width, label=LABELS_RU[mode], color=COLORS[mode])
-
-        ax.set_xlabel("Бюджет (узлов за цикл)", fontsize=11)
-        ax.set_ylabel(ylabel, fontsize=11)
-        ax.set_title(ylabel, fontsize=12)
-        ax.set_xticks(x + width)
-        ax.set_xticklabels(budgets)
-        ax.legend(fontsize=9, loc='best')
-        ax.grid(True, axis='y', alpha=0.3, linestyle='--')
-
-    # Удалить пустые подграфики
-    for idx in range(n_metrics, len(axes)):
-        fig.delaxes(axes[idx])
-
-    fig.suptitle(title, fontsize=14, y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.with_suffix('.pdf'), bbox_inches='tight')
-    plt.close()
-
-
-# -----------------------------------------------------------------------------
-# 4. Ablation plot
-# -----------------------------------------------------------------------------
-
-def plot_ablation_study(
-    results: List[dict],
-    metric_key: str,
-    filter_dict: dict,
-    title: str,
-    xlabel: str,
-    ylabel: str,
-    output_path: Path,
-    figsize: tuple = (10, 6),
-):
-    """
-    Ablation plot: current_only vs history_no_stability vs history_based.
-    """
-    subset = [r for r in results if all(r.get(k) == v for k, v in filter_dict.items())]
-
-    if not subset:
-        print(f"Нет данных для ablation plot: {filter_dict}")
-        return
-
-    ablation_modes = ['current_only', 'history_no_stability', 'history_based']
-    subset = [r for r in subset if r['mode'] in ablation_modes]
-
-    df_stats = prepare_data_with_ci(subset, ['audit_budget', 'mode'], metric_key)
-
-    fig, ax = plt.subplots(figsize=figsize)
-
-    for mode in ablation_modes:
-        mode_data = df_stats[df_stats['mode'] == mode].sort_values('audit_budget')
-
-        x = mode_data['audit_budget'].values
-        y = mode_data['mean'].values
-        ci_low = mode_data['ci_low'].values
-        ci_high = mode_data['ci_high'].values
-
-        color = COLORS.get(mode, "#333333")
-        label = LABELS_RU.get(mode, mode)
-
-        ax.plot(x, y, marker='o', linewidth=2.5, color=color, label=label, markersize=7)
-        ax.fill_between(x, ci_low, ci_high, color=color, alpha=0.2)
-
-    ax.set_xlabel(xlabel, fontsize=12)
-    ax.set_ylabel(ylabel, fontsize=12)
-    ax.set_title(title, fontsize=13, pad=15)
-    ax.legend(loc='best', frameon=True, shadow=True)
-    ax.grid(True, alpha=0.3, linestyle='--')
-
-    plt.tight_layout()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.with_suffix('.pdf'), bbox_inches='tight')
-    plt.close()
-
-
-# -----------------------------------------------------------------------------
-# 5. Сравнительная панель для главного сценария
-# -----------------------------------------------------------------------------
-
-def plot_main_scenario_panel(
-    results: List[dict],
+def plot_article_figure_2_main_panel(
+    results: Iterable[dict],
     scenario: str,
     observer_error: float,
     output_path: Path,
-):
-    """
-    Главная панель для статьи: 6 ключевых метрик с confidence bands.
-    """
-    filter_dict = {"scenario": scenario, "observer_error": observer_error}
-
-    metrics = [
-        ("audit_precision_mean", "Точность отбора узлов на проверку"),
-        ("recall_hit_rate_mean", "Полнота выявления проблемных узлов"),
-        ("intermittent_detection_rate_mean", "Доля выявления эпизодических атак"),
-        ("false_attention_rate_mean", "Доля ложного внимания к шумным узлам"),
-        ("cumulative_residual_risk_mean", "Накопленный остаточный риск"),
-        ("mean_cycles_to_verify_intermittent", "Среднее число циклов до обнаружения"),
-    ]
-
-    subset = [r for r in results if all(r.get(k) == v for k, v in filter_dict.items())]
-
-    if not subset:
-        print(f"Нет данных для главной панели: {filter_dict}")
+) -> None:
+    """Рисунок 2: составной рисунок для главного сценария."""
+    df = _filter_dataframe(
+        _as_dataframe(results),
+        {"scenario": scenario, "observer_error": observer_error},
+    )
+    if df.empty:
+        print(f"Нет данных для рисунка 2: scenario={scenario}, observer_error={observer_error}")
         return
 
-    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-    axes = axes.flatten()
+    metrics = [
+        ("audit_precision_mean", Y_LABEL_PRECISION, "а)"),
+        ("recall_hit_rate_mean", Y_LABEL_RECALL, "б)"),
+        ("false_attention_rate_mean", Y_LABEL_FALSE_ATTENTION, "в)"),
+    ]
+    budgets = sorted(df["audit_budget"].unique())
 
-    modes = ['random', 'current_only', 'history_based']
+    fig = plt.figure(figsize=(13.4, 9.8))
+    gs = GridSpec(2, 4, figure=fig, height_ratios=[1.0, 1.08])
+    axes = [
+        fig.add_subplot(gs[0, 0:2]),
+        fig.add_subplot(gs[0, 2:4]),
+        fig.add_subplot(gs[1, 1:3]),
+    ]
 
-    for idx, (metric_key, ylabel) in enumerate(metrics):
-        ax = axes[idx]
-
-        df_stats = prepare_data_with_ci(subset, ['audit_budget', 'mode'], metric_key)
-
-        for mode in modes:
-            mode_data = df_stats[df_stats['mode'] == mode].sort_values('audit_budget')
-
-            if len(mode_data) == 0:
+    for ax, (metric_key, ylabel, panel_label) in zip(axes, metrics):
+        grouped = _aggregate_metric(df, ["audit_budget", "mode"], metric_key)
+        for mode in MAIN_METHOD_ORDER:
+            mode_data = grouped[grouped["mode"] == mode].sort_values("audit_budget")
+            if mode_data.empty:
                 continue
 
-            x = mode_data['audit_budget'].values
-            y = mode_data['mean'].values
-            ci_low = mode_data['ci_low'].values
-            ci_high = mode_data['ci_high'].values
+            ax.plot(
+                mode_data["audit_budget"],
+                mode_data[metric_key],
+                color=COLORS[mode],
+                label=LABELS_RU[mode],
+                linewidth=2.5,
+                marker="o",
+                markersize=6.5,
+                markerfacecolor="white",
+                markeredgewidth=1.5,
+            )
 
-            color = COLORS[mode]
-            label = LABELS_RU[mode]
+        ax.set_xlabel(X_LABEL_BUDGET, labelpad=10)
+        ax.set_ylabel(ylabel, labelpad=12)
+        ax.set_xticks(budgets)
+        ax.set_xlim(min(budgets) - 0.3, max(budgets) + 0.3)
+        ax.set_ylim(
+            *_metric_ylim(grouped[metric_key].values, lower_bound=0.0, upper_bound=1.0)
+        )
+        _style_axis(ax)
+        _add_panel_label(ax, panel_label)
 
-            ax.plot(x, y, marker='o', linewidth=2, color=color, label=label, markersize=6)
-            ax.fill_between(x, ci_low, ci_high, color=color, alpha=0.15)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.03),
+        ncol=3,
+        frameon=False,
+    )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.98,
+        top=0.96,
+        bottom=0.14,
+        wspace=0.42,
+        hspace=0.68,
+    )
+    _save_figure(fig, output_path)
 
-        ax.set_xlabel("Бюджет (узлов за цикл)", fontsize=10)
-        ax.set_ylabel(ylabel, fontsize=10)
-        ax.set_title(ylabel, fontsize=11)
 
-        if idx == 0:
-            ax.legend(fontsize=8, loc='best', frameon=True)
 
-        ax.grid(True, alpha=0.3, linestyle='--')
+def plot_article_figure_3_ablation(
+    results: Iterable[dict],
+    scenario: str,
+    observer_error: float,
+    output_path: Path,
+) -> None:
+    """Рисунок 3: вклад компонентов истории в точность отбора."""
+    df = _filter_dataframe(
+        _as_dataframe(results),
+        {"scenario": scenario, "observer_error": observer_error},
+    )
+    if df.empty:
+        print(f"Нет данных для рисунка 3: scenario={scenario}, observer_error={observer_error}")
+        return
 
-    scenario_title = SCENARIO_LABELS_RU.get(scenario, scenario)
-    fig.suptitle(f"Главный сценарий: {scenario_title} (ошибка наблюдателя = {observer_error:.2f})",
-                 fontsize=14, y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.savefig(output_path.with_suffix('.pdf'), bbox_inches='tight')
-    plt.close()
+    df = df[df["mode"].isin(ABLATION_METHOD_ORDER)]
+    if df.empty:
+        print("Нет ablation-данных для рисунка 3")
+        return
+
+    grouped = _aggregate_metric(df, ["audit_budget", "mode"], "audit_precision_mean")
+    budgets = sorted(grouped["audit_budget"].unique())
+
+    fig, ax = plt.subplots(figsize=(10.2, 6.2))
+    for mode in ABLATION_METHOD_ORDER:
+        mode_data = grouped[grouped["mode"] == mode].sort_values("audit_budget")
+        if mode_data.empty:
+            continue
+
+        ax.plot(
+            mode_data["audit_budget"],
+            mode_data["audit_precision_mean"],
+            color=COLORS[mode],
+            label=LABELS_RU[mode],
+            linewidth=2.5,
+            marker="o",
+            markersize=6.5,
+            markerfacecolor="white",
+            markeredgewidth=1.5,
+        )
+
+    ax.set_xlabel(X_LABEL_BUDGET, labelpad=10)
+    ax.set_ylabel(Y_LABEL_PRECISION, labelpad=12)
+    ax.set_xticks(budgets)
+    ax.set_xlim(min(budgets) - 0.3, max(budgets) + 0.3)
+    ax.set_ylim(*_metric_ylim(grouped["audit_precision_mean"].values, lower_bound=0.0, upper_bound=1.0))
+    ax.legend(loc="upper left", frameon=False)
+    _style_axis(ax)
+    fig.tight_layout()
+    _save_figure(fig, output_path)
+
+
+
+def build_final_precision_table(
+    results: Iterable[dict],
+    scenario: str,
+    observer_error: float,
+) -> pd.DataFrame:
+    """Финальная таблица для статьи: current-only vs proposed."""
+    df = _filter_dataframe(
+        _as_dataframe(results),
+        {"scenario": scenario, "observer_error": observer_error},
+    )
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                "Бюджет системной проверки, узлов за цикл",
+                "Точность: только текущие наблюдения",
+                "Точность: предлагаемый метод",
+                "Улучшение точности отбора, %",
+            ]
+        )
+
+    grouped = _aggregate_metric(df, ["audit_budget", "mode"], "audit_precision_mean")
+    rows = []
+    for budget in sorted(grouped["audit_budget"].unique()):
+        current_values = grouped[
+            (grouped["audit_budget"] == budget) & (grouped["mode"] == "current_only")
+        ]["audit_precision_mean"].values
+        proposed_values = grouped[
+            (grouped["audit_budget"] == budget) & (grouped["mode"] == "history_based")
+        ]["audit_precision_mean"].values
+
+        if len(current_values) == 0 or len(proposed_values) == 0:
+            continue
+
+        current_value = float(current_values[0])
+        proposed_value = float(proposed_values[0])
+        improvement = 0.0
+        if current_value > 0:
+            improvement = 100.0 * (proposed_value - current_value) / current_value
+
+        rows.append({
+            "Бюджет системной проверки, узлов за цикл": int(budget),
+            "Точность: только текущие наблюдения": f"{current_value:.3f}",
+            "Точность: предлагаемый метод": f"{proposed_value:.3f}",
+            "Улучшение точности отбора, %": f"{improvement:+.1f}",
+        })
+
+    return pd.DataFrame(rows)

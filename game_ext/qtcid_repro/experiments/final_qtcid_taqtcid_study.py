@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 import csv
+import math
 import statistics
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import stats
 
 from game_ext.qtcid_repro.wang.bvs_core import (
     WangBVSConfig,
@@ -41,6 +43,41 @@ def mean(values: list[float]) -> float:
 
 def std(values: list[float]) -> float:
     return statistics.pstdev(values) if len(values) > 1 else 0.0
+
+
+def sample_std(values: list[float]) -> float:
+    return statistics.stdev(values) if len(values) > 1 else 0.0
+
+
+def cmvi_ci95(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    if len(values) == 1:
+        return values[0], values[0]
+    sem = sample_std(values) / math.sqrt(len(values))
+    margin = stats.t.ppf(0.975, len(values) - 1) * sem
+    value_mean = mean(values)
+    return value_mean - margin, value_mean + margin
+
+
+def paired_test_pvalues(q_values: list[float], ta_values: list[float]) -> tuple[float, float]:
+    if len(q_values) != len(ta_values) or len(q_values) < 2:
+        return 1.0, 1.0
+
+    t_res = stats.ttest_rel(q_values, ta_values)
+    t_p = float(t_res.pvalue) if not math.isnan(float(t_res.pvalue)) else 1.0
+
+    diffs = [q - ta for q, ta in zip(q_values, ta_values)]
+    if all(abs(diff) < 1e-12 for diff in diffs):
+        return t_p, 1.0
+
+    try:
+        w_res = stats.wilcoxon(q_values, ta_values, zero_method="wilcox")
+        w_p = float(w_res.pvalue) if not math.isnan(float(w_res.pvalue)) else 1.0
+    except ValueError:
+        w_p = 1.0
+
+    return t_p, w_p
 
 
 def safe_pct_improvement(old: float, new: float) -> float:
@@ -146,15 +183,29 @@ def run_qtcid_family_manual(cfg, simulator_cls):
     fnr = fn_mean / (fn_mean + tp_mean) if (fn_mean + tp_mean) > 0 else 0.0
 
     return {
+        "results": results,
         "runs": cfg.runs,
         "mttf_mean": mean(mttf_vals),
         "mttf_std": std(mttf_vals),
+        "mttf_vals": mttf_vals,
+        "accuracy_vals": [
+            ((r.tp + r.tn) / (r.tp + r.tn + r.fp + r.fn))
+            if (r.tp + r.tn + r.fp + r.fn) > 0 else 0.0
+            for r in results
+        ],
         "accuracy_mean": accuracy,
+        "accuracy_std": std([
+            ((r.tp + r.tn) / (r.tp + r.tn + r.fp + r.fn))
+            if (r.tp + r.tn + r.fp + r.fn) > 0 else 0.0
+            for r in results
+        ]),
         "precision_mean": precision,
         "recall_mean": recall,
         "fpr_mean": fpr,
         "fnr_mean": fnr,
         "energy_spent_mean": mean(e_total_vals),
+        "energy_spent_std": std(e_total_vals),
+        "energy_spent_vals": e_total_vals,
         "energy_voting_mean": mean(e_vote_vals),
         "energy_audit_mean": mean(e_audit_vals),
         "audits_mean": mean(audits_vals),
@@ -163,10 +214,40 @@ def run_qtcid_family_manual(cfg, simulator_cls):
         "evicted_left_mean": mean(evicted_vals),
         "cmvi_mean": mean(cmvi_vals),
         "cmvi_std": std(cmvi_vals),
+        "cmvi_vals": cmvi_vals,
+        "cmvi_ci95_low": cmvi_ci95(cmvi_vals)[0],
+        "cmvi_ci95_high": cmvi_ci95(cmvi_vals)[1],
         "false_good_evictions_mean": mean(false_good_vals),
         "bad_nodes_retained_mean": mean(bad_retained_vals),
         "audit_mismatch_events_mean": mean(mismatch_vals),
     }
+
+
+def raw_rows_for_runs(pa: float, tids: int, method: str, cfg, results: list) -> list[dict]:
+    rows = []
+    for run_id, result in enumerate(results):
+        total = result.tp + result.tn + result.fp + result.fn
+        rows.append({
+            "run_id": run_id,
+            "seed": cfg.seed + run_id,
+            "method": method,
+            "pa": pa,
+            "tids": tids,
+            "mttf": result.mttf,
+            "accuracy": ((result.tp + result.tn) / total) if total > 0 else 0.0,
+            "energy": cfg.initial_system_energy - result.energy_left,
+            "cmvi": result.cmvi,
+            "nfg": result.false_good_evictions,
+            "nbr": result.bad_nodes_retained,
+            "nam": result.audit_mismatch_events,
+            "false_good_evictions": result.false_good_evictions,
+            "bad_nodes_retained": result.bad_nodes_retained,
+            "audit_mismatch_events": result.audit_mismatch_events,
+            "audit_count": result.audits,
+            "audit_update_count": getattr(result, "audit_update_count", 0),
+            "collective_update_count": getattr(result, "collective_update_count", 0),
+        })
+    return rows
 
 
 def write_csv(path: Path, rows: list[dict]) -> None:
@@ -413,6 +494,8 @@ def main():
     detail_rows = []
     rep_rows = []
     bvs_rows = []
+    raw_rows = []
+    decomposition_rows = []
 
     for pa in PA_VALUES:
         for tids in TIDS_VALUES:
@@ -427,6 +510,31 @@ def main():
             bvs = run_wang_bvs_monte_carlo(bvs_cfg)
 
             cmvi_improvement_pct = safe_pct_improvement(q["cmvi_mean"], ta["cmvi_mean"])
+            ttest_pvalue, wilcoxon_pvalue = paired_test_pvalues(q["cmvi_vals"], ta["cmvi_vals"])
+
+            raw_rows.extend(raw_rows_for_runs(pa, tids, "Q-TCID", q_cfg, q["results"]))
+            raw_rows.extend(raw_rows_for_runs(pa, tids, "TA-QTCID", ta_cfg, ta["results"]))
+
+            for label, values in (("Q-TCID", q), ("TA-QTCID", ta)):
+                nfg = values["false_good_evictions_mean"]
+                nbr = values["bad_nodes_retained_mean"]
+                nam = values["audit_mismatch_events_mean"]
+                cmvi = values["cmvi_mean"]
+                decomposition_rows.append({
+                    "pa": pa,
+                    "tids": tids,
+                    "method": label,
+                    "lambda_fg": 1.0,
+                    "lambda_br": 1.0,
+                    "lambda_am": 1.0,
+                    "nfg_mean": round(nfg, 4),
+                    "nbr_mean": round(nbr, 4),
+                    "nam_mean": round(nam, 4),
+                    "nfg_contribution": round(nfg, 4),
+                    "nbr_contribution": round(nbr, 4),
+                    "nam_contribution": round(nam, 4),
+                    "cmvi_mean": round(cmvi, 4),
+                })
 
             row = {
                 "pa": pa,
@@ -435,9 +543,13 @@ def main():
                 "q_mttf_mean": round(q["mttf_mean"], 4),
                 "q_mttf_std": round(q["mttf_std"], 4),
                 "q_accuracy_mean": round(q["accuracy_mean"], 6),
+                "q_accuracy_std": round(q["accuracy_std"], 6),
                 "q_energy_spent_mean": round(q["energy_spent_mean"], 4),
+                "q_energy_spent_std": round(q["energy_spent_std"], 4),
                 "q_cmvi_mean": round(q["cmvi_mean"], 4),
                 "q_cmvi_std": round(q["cmvi_std"], 4),
+                "q_cmvi_ci95_low": round(q["cmvi_ci95_low"], 4),
+                "q_cmvi_ci95_high": round(q["cmvi_ci95_high"], 4),
                 "q_false_good_evictions_mean": round(q["false_good_evictions_mean"], 4),
                 "q_bad_nodes_retained_mean": round(q["bad_nodes_retained_mean"], 4),
                 "q_audit_mismatch_events_mean": round(q["audit_mismatch_events_mean"], 4),
@@ -445,14 +557,21 @@ def main():
                 "ta_mttf_mean": round(ta["mttf_mean"], 4),
                 "ta_mttf_std": round(ta["mttf_std"], 4),
                 "ta_accuracy_mean": round(ta["accuracy_mean"], 6),
+                "ta_accuracy_std": round(ta["accuracy_std"], 6),
                 "ta_energy_spent_mean": round(ta["energy_spent_mean"], 4),
+                "ta_energy_spent_std": round(ta["energy_spent_std"], 4),
                 "ta_cmvi_mean": round(ta["cmvi_mean"], 4),
                 "ta_cmvi_std": round(ta["cmvi_std"], 4),
+                "ta_cmvi_ci95_low": round(ta["cmvi_ci95_low"], 4),
+                "ta_cmvi_ci95_high": round(ta["cmvi_ci95_high"], 4),
                 "ta_false_good_evictions_mean": round(ta["false_good_evictions_mean"], 4),
                 "ta_bad_nodes_retained_mean": round(ta["bad_nodes_retained_mean"], 4),
                 "ta_audit_mismatch_events_mean": round(ta["audit_mismatch_events_mean"], 4),
 
+                "delta_cmvi_percent": round(cmvi_improvement_pct, 4),
                 "cmvi_improvement_pct": round(cmvi_improvement_pct, 4),
+                "paired_ttest_pvalue": round(ttest_pvalue, 8),
+                "wilcoxon_pvalue": round(wilcoxon_pvalue, 8),
             }
             detail_rows.append(row)
 
@@ -469,21 +588,38 @@ def main():
                     "pa": pa,
                     "tids": tids,
                     "q_mttf_mean": round(q["mttf_mean"], 4),
+                    "q_mttf_std": round(q["mttf_std"], 4),
                     "q_accuracy_mean": round(q["accuracy_mean"], 6),
+                    "q_accuracy_std": round(q["accuracy_std"], 6),
                     "q_energy_spent_mean": round(q["energy_spent_mean"], 4),
+                    "q_energy_spent_std": round(q["energy_spent_std"], 4),
                     "q_cmvi_mean": round(q["cmvi_mean"], 4),
+                    "q_cmvi_std": round(q["cmvi_std"], 4),
+                    "q_cmvi_ci95_low": round(q["cmvi_ci95_low"], 4),
+                    "q_cmvi_ci95_high": round(q["cmvi_ci95_high"], 4),
 
                     "ta_mttf_mean": round(ta["mttf_mean"], 4),
+                    "ta_mttf_std": round(ta["mttf_std"], 4),
                     "ta_accuracy_mean": round(ta["accuracy_mean"], 6),
+                    "ta_accuracy_std": round(ta["accuracy_std"], 6),
                     "ta_energy_spent_mean": round(ta["energy_spent_mean"], 4),
+                    "ta_energy_spent_std": round(ta["energy_spent_std"], 4),
                     "ta_cmvi_mean": round(ta["cmvi_mean"], 4),
+                    "ta_cmvi_std": round(ta["cmvi_std"], 4),
+                    "ta_cmvi_ci95_low": round(ta["cmvi_ci95_low"], 4),
+                    "ta_cmvi_ci95_high": round(ta["cmvi_ci95_high"], 4),
 
+                    "delta_cmvi_percent": round(cmvi_improvement_pct, 4),
                     "cmvi_improvement_pct": round(cmvi_improvement_pct, 4),
+                    "paired_ttest_pvalue": round(ttest_pvalue, 8),
+                    "wilcoxon_pvalue": round(wilcoxon_pvalue, 8),
                 })
 
     write_csv(OUT_DIR / "table_qtcid_vs_taqtcid_detailed.csv", detail_rows)
     write_csv(OUT_DIR / "table_qtcid_vs_taqtcid_representative.csv", rep_rows)
     write_csv(OUT_DIR / "table_bvs_baseline.csv", bvs_rows)
+    write_csv(OUT_DIR / "raw_paired_results.csv", raw_rows)
+    write_csv(OUT_DIR / "table_cmvi_decomposition.csv", decomposition_rows)
 
     plot_mttf_by_pa(detail_rows)
     plot_cmvi_by_pa(detail_rows)
@@ -495,6 +631,8 @@ def main():
     print(OUT_DIR / "table_qtcid_vs_taqtcid_detailed.csv")
     print(OUT_DIR / "table_qtcid_vs_taqtcid_representative.csv")
     print(OUT_DIR / "table_bvs_baseline.csv")
+    print(OUT_DIR / "raw_paired_results.csv")
+    print(OUT_DIR / "table_cmvi_decomposition.csv")
     print(OUT_DIR / "fig_mttf_qtcid_vs_taqtcid.png")
     print(OUT_DIR / "fig_cmvi_qtcid_vs_taqtcid.png")
     print(OUT_DIR / "fig_cmvi_improvement_pct.png")

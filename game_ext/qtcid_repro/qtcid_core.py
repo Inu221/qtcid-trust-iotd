@@ -75,8 +75,8 @@ class QTCIDConfig(WangBVSConfig):
     # CMVI weights
     # -----------------------------
     cmvi_fp_good_weight: float = 1.0
-    cmvi_fn_bad_weight: float = 1.5
-    cmvi_mismatch_weight: float = 0.5
+    cmvi_fn_bad_weight: float = 1.0
+    cmvi_mismatch_weight: float = 1.0
 
     adaptation_tids_scale: float = 250.0
 
@@ -105,6 +105,8 @@ class QTCIDRunResult:
     bad_nodes_retained: int
     audit_mismatch_events: int
     cmvi: float
+    audit_update_count: int = 0
+    collective_update_count: int = 0
 
 
 class QTCIDSimulator:
@@ -466,6 +468,8 @@ class QTCIDSimulator:
             bad_nodes_retained=self.bad_nodes_retained,
             audit_mismatch_events=self.audit_mismatch_events,
             cmvi=self._cmvi_value(),
+            audit_update_count=getattr(self, "audit_update_count", 0),
+            collective_update_count=getattr(self, "collective_update_count", 0),
         )
 
 
